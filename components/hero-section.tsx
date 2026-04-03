@@ -5,11 +5,14 @@ import { motion, useScroll, useTransform } from 'framer-motion'
 import { ArrowRight, Play, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { cars } from '@/lib/data'
+import type { Car } from '@/lib/types'
 import { isUnoptimizedUrl } from '@/lib/image'
 
-export function HeroSection() {
-  const featuredCar = cars.find((car) => car.featured) || cars[0]
+interface HeroSectionProps {
+  car: Car
+}
+
+export function HeroSection({ car: featuredCar }: HeroSectionProps) {
   const sectionRef = useRef<HTMLElement>(null)
   
   const { scrollYProgress } = useScroll({

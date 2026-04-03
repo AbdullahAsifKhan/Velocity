@@ -1,0 +1,7 @@
+[
+  {"id": "c1", "brand": "Toyota", "name": "Toyota Camry", "year": 2024, "type": "Sedan"},
+  {"id": "c2", "brand": "Honda", "name": "Honda Civic", "year": 2024, "type": "Sedan"},
+  {"id": "c3", "brand": "Ford", "name": "Ford F-150", "year": 2023, "type": "Truck"},
+  {"id": "c4", "brand": "Tesla", "name": "Tesla Model S", "year": 2024, "type": "Electric"},
+  {"id": "c5", "brand": "Chevrolet", "name": "Chevrolet Corvette", "year": 2023, "type": "Sports"}
+]

@@ -5,7 +5,7 @@ import { persist } from 'zustand/middleware'
 import type { Car } from './types'
 
 /** Union of car types used for category filtering. */
-type SelectedType = 'All' | Car['type'] | 'Broken Images'
+type SelectedType = 'All' | Car['type']
 
 /** A named collection of saved car IDs (used by the Garage feature). */
 interface GarageCollection {
@@ -133,16 +133,13 @@ export function filterCars(
   return cars.filter((car) => {
     const matchesSearch =
       query === '' ||
-      car.name.toLowerCase().includes(query) ||
-      car.brand.toLowerCase().includes(query) ||
-      car.type.toLowerCase().includes(query) ||
-      car.fuelType.toLowerCase().includes(query)
+      car.name?.toLowerCase().includes(query) ||
+      car.brand?.toLowerCase().includes(query) ||
+      car.type?.toLowerCase().includes(query) ||
+      car.fuelType?.toLowerCase().includes(query)
 
     const matchesType =
-      selectedType === 'All' ||
-      (selectedType === 'Broken Images'
-        ? car.image.includes('wiki')
-        : car.type === selectedType)
+      selectedType === 'All' || car.type === selectedType
 
     return matchesSearch && matchesType
   })

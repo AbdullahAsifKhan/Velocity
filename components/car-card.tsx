@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState, memo, useMemo } from 'react'
+import { useEffect, useState, memo, useCallback } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Heart, Plus, Zap, Fuel, Gauge, Check } from 'lucide-react'
+import { Heart, Plus, Zap, Fuel, Gauge, Check, Car as CarIcon } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCarStore } from '@/lib/store'
@@ -24,9 +24,14 @@ export const CarCard = memo(function CarCard({ car, index = 0 }: CarCardProps) {
   const shouldReduceMotion = useReducedMotion()
 
   const [mounted, setMounted] = useState(false)
+  const [imgError, setImgError] = useState(false)
 
   useEffect(() => {
     setMounted(true)
+  }, [])
+
+  const handleImageError = useCallback(() => {
+    setImgError(true)
   }, [])
 
   // Derive favorite/compare status from state arrays for proper reactivity
@@ -44,15 +49,24 @@ export const CarCard = memo(function CarCard({ car, index = 0 }: CarCardProps) {
       <div className="relative overflow-hidden rounded-2xl bg-card border border-border/60 hover-lift hover:border-primary/40">
         {/* Image Container */}
         <Link href={`/car/${car.id}`} className="block relative aspect-[3/2] overflow-hidden">
-          <Image
-            src={car.image}
-            alt={car.name}
-            fill
-            loading="lazy"
-            unoptimized={isUnoptimizedUrl(car.image)}
-            className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-          />
+          {imgError ? (
+            /* Graceful fallback when image fails to load */
+            <div className="absolute inset-0 bg-gradient-to-br from-secondary via-card to-secondary/80 flex flex-col items-center justify-center gap-2">
+              <CarIcon className="w-12 h-12 text-muted-foreground/40" />
+              <span className="text-xs text-muted-foreground/60 font-medium">{car.brand}</span>
+            </div>
+          ) : (
+            <Image
+              src={car.image}
+              alt={car.name}
+              fill
+              loading="lazy"
+              unoptimized={isUnoptimizedUrl(car.image)}
+              className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              onError={handleImageError}
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-card/80 via-transparent to-transparent" />
 
           {/* Type Badge */}

@@ -1,0 +1,20 @@
+{
+  "sourcePriority": [
+    "nhtsa",
+    "unsplash",
+    "mock_specs",
+    "wikipedia",
+    "google_manufacturer",
+    "google_web"
+  ],
+  "sources": {
+    "google_web": {
+      "enabled": true,
+      "minIntervalSeconds": 1.0
+    },
+    "mock_specs": {
+      "enabled": true,
+      "minIntervalSeconds": 0
+    }
+  }
+}

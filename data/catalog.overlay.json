@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-03T13:46:19Z",
+  "byCarId": {
+    "c1": {
+      "officialPageUrl": "https://en.wikipedia.org/wiki/Toyota_Camry",
+      "launchDate": "March 1982 \u2013 present",
+      "drivetrain": "Front-engine, front-wheel-drive (1982\u2013present) Front-engine, four-wheel-drive (1986\u20132011, 2019\u2013present)",
+      "ingestedAt": "2026-04-03T13:46:14Z",
+      "sources": [
+        {
+          "sourceId": "wikipedia_scraper",
+          "sourceName": "Wikipedia",
+          "retrievedAt": "2026-04-03T13:46:14Z",
+          "url": "https://en.wikipedia.org/wiki/Toyota_Camry"
+        }
+      ],
+      "canonicalKey": "toyota::camry::2024"
+    },
+    "c2": {
+      "officialPageUrl": "https://en.wikipedia.org/wiki/Honda_Civic",
+      "launchDate": "1972\u2013present",
+      "drivetrain": "Front-engine, front-wheel-drive , Front-engine, four-wheel-drive (1983\u20132005)",
+      "ingestedAt": "2026-04-03T13:46:15Z",
+      "sources": [
+        {
+          "sourceId": "wikipedia_scraper",
+          "sourceName": "Wikipedia",
+          "retrievedAt": "2026-04-03T13:46:15Z",
+          "url": "https://en.wikipedia.org/wiki/Honda_Civic"
+        }
+      ],
+      "canonicalKey": "honda::civic::2024"
+    },
+    "c3": {
+      "officialPageUrl": "https://en.wikipedia.org/wiki/Ford_F-150_Lightning",
+      "launchDate": "April 2022 \u2013December 2025",
+      "drivetrain": "Dual-motor, four-wheel-drive",
+      "wheelbase": 3696,
+      "length": 5911,
+      "width": 2032,
+      "height": 1989,
+      "weight": 3127,
+      "ingestedAt": "2026-04-03T13:46:16Z",
+      "sources": [
+        {
+          "sourceId": "wikipedia_scraper",
+          "sourceName": "Wikipedia",
+          "retrievedAt": "2026-04-03T13:46:16Z",
+          "url": "https://en.wikipedia.org/wiki/Ford_F-150_Lightning"
+        }
+      ],
+      "canonicalKey": "ford::f150::2023"
+    },
+    "c4": {
+      "officialPageUrl": "https://en.wikipedia.org/wiki/Tesla_Model_S",
+      "launchDate": "June 2012 \u2013 April 2026",
+      "drivetrain": "Rear-motor, rear-wheel drive Dual-motor, all-wheel drive Tri-motor, all-wheel-drive (Plaid)",
+      "transmission": "Single-speed reduction gear",
+      "wheelbase": 2960,
+      "length": 5021,
+      "width": 1960,
+      "height": 1440,
+      "weight": 2250,
+      "ingestedAt": "2026-04-03T13:46:18Z",
+      "sources": [
+        {
+          "sourceId": "wikipedia_scraper",
+          "sourceName": "Wikipedia",
+          "retrievedAt": "2026-04-03T13:46:18Z",
+          "url": "https://en.wikipedia.org/wiki/Tesla_Model_S"
+        }
+      ],
+      "canonicalKey": "tesla::models::2024"
+    },
+    "c5": {
+      "officialPageUrl": "https://en.wikipedia.org/wiki/Chevrolet_Corvette",
+      "launchDate": "1953\u2013present",
+      "drivetrain": "FR layout /FMR Layout (1953\u20132019) RMR layout (2020\u2013present)",
+      "ingestedAt": "2026-04-03T13:46:19Z",
+      "sources": [
+        {
+          "sourceId": "wikipedia_scraper",
+          "sourceName": "Wikipedia",
+          "retrievedAt": "2026-04-03T13:46:19Z",
+          "url": "https://en.wikipedia.org/wiki/Chevrolet_Corvette"
+        }
+      ],
+      "canonicalKey": "chevrolet::corvette::2023"
+    }
+  }
+}

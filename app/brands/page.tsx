@@ -1,19 +1,19 @@
 import Link from 'next/link'
 import { Building2, ChevronRight } from 'lucide-react'
-import { Navigation } from '@/components/navigation'
 import { CompareBar } from '@/components/compare-bar'
-import { cars, brands } from '@/lib/data'
+import { fetchCarsList, fetchBrands } from '@/lib/api-service'
 
-/** Pre-compute brand stats at module level (runs once at import time). */
-const brandStats = brands.map((brand) => {
-  const count = cars.filter((car) => car.brand === brand).length
-  return { name: brand, count }
-})
+export default async function BrandsPage() {
+  const cars = await fetchCarsList()
+  const brands = await fetchBrands()
 
-export default function BrandsPage() {
+  const brandStats = brands.map((brand) => {
+    const count = cars.filter((car) => car.brand === brand).length
+    return { name: brand, count }
+  })
+
   return (
     <main className="min-h-screen bg-background">
-      <Navigation />
 
       <div className="pt-24 pb-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

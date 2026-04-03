@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
-import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2, Car as CarIcon } from 'lucide-react'
 import { useCarStore } from '@/lib/store'
 import type { Car } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -11,6 +11,15 @@ import { isUnoptimizedUrl } from '@/lib/image'
 
 export function CarGallery({ car }: { car: Car }) {
   const [selectedImage, setSelectedImage] = useState(0)
+  const [imgErrors, setImgErrors] = useState<Set<number>>(new Set())
+
+  const handleImageError = useCallback((index: number) => {
+    setImgErrors(prev => new Set(prev).add(index))
+  }, [])
+
+  const gallery = car.gallery ?? []
+  const currentSrc = gallery[selectedImage] || car.image
+  const hasError = imgErrors.has(selectedImage)
   
   return (
     <div className="space-y-4">
@@ -27,28 +36,36 @@ export function CarGallery({ car }: { car: Car }) {
             exit={{ opacity: 0 }}
             className="absolute inset-0"
           >
-            <Image
-              src={car.gallery[selectedImage] || car.image}
-              alt={car.name}
-              fill
-              unoptimized={isUnoptimizedUrl(car.gallery[selectedImage] || car.image)}
-              className="object-cover"
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              priority
-            />
+            {hasError ? (
+              <div className="absolute inset-0 bg-gradient-to-br from-secondary via-card to-secondary/80 flex flex-col items-center justify-center gap-3">
+                <CarIcon className="w-16 h-16 text-muted-foreground/40" />
+                <span className="text-sm text-muted-foreground/60 font-medium">{car.brand} {car.name}</span>
+              </div>
+            ) : (
+              <Image
+                src={currentSrc}
+                alt={car.name}
+                fill
+                unoptimized={isUnoptimizedUrl(currentSrc)}
+                className="object-cover"
+                sizes="(max-width: 1024px) 100vw, 50vw"
+                priority
+                onError={() => handleImageError(selectedImage)}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
         
-        {car.gallery.length > 1 && (
+        {gallery.length > 1 && (
           <>
             <button
-              onClick={() => setSelectedImage((prev) => (prev > 0 ? prev - 1 : car.gallery.length - 1))}
+              onClick={() => setSelectedImage((prev) => (prev > 0 ? prev - 1 : gallery.length - 1))}
               className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full glass hover:bg-secondary transition-colors"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <button
-              onClick={() => setSelectedImage((prev) => (prev < car.gallery.length - 1 ? prev + 1 : 0))}
+              onClick={() => setSelectedImage((prev) => (prev < gallery.length - 1 ? prev + 1 : 0))}
               className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full glass hover:bg-secondary transition-colors"
             >
               <ChevronRight className="w-5 h-5" />
@@ -57,9 +74,9 @@ export function CarGallery({ car }: { car: Car }) {
         )}
       </motion.div>
 
-      {car.gallery.length > 1 && (
+      {gallery.length > 1 && (
         <div className="flex gap-3 overflow-x-auto scrollbar-hide">
-          {car.gallery.map((img, index) => (
+          {gallery.map((img, index) => (
             <button
               key={index}
               onClick={() => setSelectedImage(index)}
@@ -70,14 +87,21 @@ export function CarGallery({ car }: { car: Car }) {
                   : "border-transparent opacity-60 hover:opacity-100"
               )}
             >
-              <Image
-                src={img}
-                alt={`${car.name} view ${index + 1}`}
-                fill
-                unoptimized={isUnoptimizedUrl(img)}
-                className="object-cover"
-                sizes="96px"
-              />
+              {imgErrors.has(index) ? (
+                <div className="absolute inset-0 bg-secondary flex items-center justify-center">
+                  <CarIcon className="w-6 h-6 text-muted-foreground/40" />
+                </div>
+              ) : (
+                <Image
+                  src={img}
+                  alt={`${car.name} view ${index + 1}`}
+                  fill
+                  unoptimized={isUnoptimizedUrl(img)}
+                  className="object-cover"
+                  sizes="96px"
+                  onError={() => handleImageError(index)}
+                />
+              )}
             </button>
           ))}
         </div>

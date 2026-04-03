@@ -3,12 +3,10 @@
 import { motion } from 'framer-motion'
 import { Home, Search } from 'lucide-react'
 import Link from 'next/link'
-import { Navigation } from '@/components/navigation'
 
 export default function NotFound() {
   return (
     <main className="min-h-screen bg-background">
-      <Navigation />
 
       <div className="flex flex-col items-center justify-center min-h-screen px-4 text-center">
         <motion.div

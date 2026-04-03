@@ -1,16 +1,17 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Building2, ChevronRight } from 'lucide-react'
-import { Navigation } from '@/components/navigation'
 import { CarGrid } from '@/components/car-grid'
 import { CompareBar } from '@/components/compare-bar'
-import { cars } from '@/lib/data'
+import { fetchCarsList } from '@/lib/api-service'
+import type { Car } from '@/lib/types'
 
 export default async function BrandPage({
   params,
 }: {
   params: Promise<{ brand: string }>
 }) {
+  const cars = await fetchCarsList() as Car[]
   const { brand } = await params
   const brandName = decodeURIComponent(brand)
   const brandCars = cars.filter((car) => car.brand === brandName)
@@ -19,7 +20,6 @@ export default async function BrandPage({
 
   return (
     <main className="min-h-screen bg-background">
-      <Navigation />
 
       <div className="pt-24 pb-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

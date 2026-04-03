@@ -6,12 +6,12 @@ import { X, ArrowRight } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCarStore } from '@/lib/store'
-import { carMap } from '@/lib/data'
 import type { Car } from '@/lib/types'
 import { isUnoptimizedUrl } from '@/lib/image'
 
 export function CompareBar() {
   const [mounted, setMounted] = useState(false)
+  const [selectedCars, setSelectedCars] = useState<Car[]>([])
   const { compareList, removeFromCompare, clearCompare } = useCarStore()
   const shouldReduceMotion = useReducedMotion()
 
@@ -19,12 +19,17 @@ export function CompareBar() {
     setMounted(true)
   }, [])
 
-  // Use carMap for O(1) lookups and proper type narrowing (no non-null assertions)
-  const selectedCars = compareList
-    .map((id) => carMap.get(id))
-    .filter((car): car is Car => car !== undefined)
+  useEffect(() => {
+    if (compareList.length > 0) {
+      fetch(`/api/cars?ids=${compareList.join(',')}`)
+        .then(res => res.json())
+        .then(data => setSelectedCars(data))
+    } else {
+      setSelectedCars([])
+    }
+  }, [compareList])
 
-  if (!mounted || selectedCars.length === 0) return null
+  if (!mounted || compareList.length === 0) return null
 
   return (
     <AnimatePresence>

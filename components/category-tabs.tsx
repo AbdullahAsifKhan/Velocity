@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useCarStore } from '@/lib/store'
-import { types } from '@/lib/data'
+import { types } from '@/lib/constants'
 import { cn } from '@/lib/utils'
-import { Car, Truck, Zap, Crown, Gauge, ImageOff } from 'lucide-react'
+import { Car, Truck, Zap, Crown, Gauge } from 'lucide-react'
 
-const typeIcons: Record<(typeof types)[number], typeof Gauge> = {
+const typeIcons: Record<string, typeof Gauge> = {
   All: Gauge,
   SUV: Truck,
   Sedan: Car,
@@ -16,7 +16,6 @@ const typeIcons: Record<(typeof types)[number], typeof Gauge> = {
   Luxury: Crown,
   Hatchback: Car,
   Pickup: Truck,
-  'Broken Images': ImageOff,
 }
 
 export function CategoryTabs() {
@@ -34,7 +33,7 @@ export function CategoryTabs() {
     <div className="w-full overflow-x-auto scrollbar-hide">
       <div className="flex items-center gap-2 p-1 min-w-max">
         {types.map((type) => {
-          const Icon = typeIcons[type]
+          const Icon = typeIcons[type] || Gauge
           const isActive = selectedType === type
 
           return (

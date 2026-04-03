@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Search, Heart, LayoutGrid, Menu, X, Gauge } from 'lucide-react'
 import { useCarStore } from '@/lib/store'
-import { brands } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { SearchModal } from '@/components/search-modal'
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -21,19 +21,10 @@ export function Navigation() {
   const [isOpen, setIsOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const { searchQuery, setSearchQuery, favorites, compareList } = useCarStore()
-  const router = useRouter()
+  const { favorites, compareList } = useCarStore()
   const pathname = usePathname()
   const shouldReduceMotion = useReducedMotion()
   
-  const popularBrands = brands.slice(0, 8)
-  
-  const handleSearch = (val: string) => {
-    setSearchQuery(val)
-    if (pathname !== '/') {
-      router.push('/')
-    }
-  }
   
   const [scrolled, setScrolled] = useState(false)
 
@@ -42,6 +33,18 @@ export function Navigation() {
     const handleScroll = () => setScrolled(window.scrollY > 20)
     window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Ctrl+K / Cmd+K to open search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setIsSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
   }, [])
 
   return (
@@ -84,54 +87,16 @@ export function Navigation() {
               ))}
             </div>
 
-            {/* Search Bar - Desktop */}
-            <div className="hidden lg:flex items-center gap-4">
-              <AnimatePresence>
-                {isSearchOpen ? (
-                  <motion.div
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: 300, opacity: 1 }}
-                    exit={{ width: 0, opacity: 0 }}
-                    className="relative group"
-                  >
-                    <input
-                      type="text"
-                      placeholder="Search cars, brands..."
-                      value={searchQuery}
-                      onChange={(e) => handleSearch(e.target.value)}
-                      className="peer w-full px-4 py-2 pl-10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground border border-border focus:border-primary focus:outline-none transition-colors"
-                      autoFocus
-                    />
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    
-                    {/* Brand Recommendations Dropdown */}
-                    <div className="absolute top-full left-0 right-0 mt-2 p-3 rounded-lg bg-card border border-border opacity-0 invisible peer-focus:opacity-100 peer-focus:visible hover:opacity-100 hover:visible transition-all shadow-xl z-50">
-                      <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Popular Brands</div>
-                      <div className="flex flex-wrap gap-2">
-                        {popularBrands.map(brand => (
-                          <button
-                            key={brand}
-                            onMouseDown={(e) => { e.preventDefault(); handleSearch(brand); }}
-                            className="text-xs px-2 py-1.5 rounded-md bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
-                          >
-                            {brand}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
-              
+            {/* Search trigger + icons — Desktop */}
+            <div className="hidden lg:flex items-center gap-2">
+              {/* Search button with Ctrl+K hint */}
               <button
-                onClick={() => setIsSearchOpen(!isSearchOpen)}
-                className="p-2 rounded-lg hover:bg-secondary transition-colors"
+                onClick={() => setIsSearchOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/60 border border-border/40 hover:bg-secondary transition-colors text-sm text-muted-foreground group"
               >
-                {isSearchOpen ? (
-                  <X className="w-5 h-5" />
-                ) : (
-                  <Search className="w-5 h-5" />
-                )}
+                <Search className="w-4 h-4" />
+                <span className="hidden xl:block">Search...</span>
+                <kbd className="hidden xl:flex items-center gap-0.5 text-xs border border-border/60 rounded px-1.5 py-0.5 bg-background/50 group-hover:border-primary/40 transition-colors">⌃K</kbd>
               </button>
 
               <Link
@@ -159,16 +124,27 @@ export function Navigation() {
               </Link>
             </div>
 
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="lg:hidden p-2 rounded-lg hover:bg-secondary transition-colors"
-            >
-              {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
+            {/* Mobile: search icon + hamburger */}
+            <div className="flex lg:hidden items-center gap-1">
+              <button
+                onClick={() => setIsSearchOpen(true)}
+                className="p-2 rounded-lg hover:bg-secondary transition-colors"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="p-2 rounded-lg hover:bg-secondary transition-colors"
+              >
+                {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
           </div>
         </div>
       </motion.nav>
+
+      {/* Global Search Modal */}
+      <SearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
 
       {/* Mobile Menu */}
       <AnimatePresence>
@@ -181,32 +157,14 @@ export function Navigation() {
           >
             <div className="absolute inset-0 bg-background/95 backdrop-blur-lg pt-20">
               <div className="p-6 space-y-6">
-                {/* Mobile Search */}
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search cars, brands..."
-                    value={searchQuery}
-                    onChange={(e) => handleSearch(e.target.value)}
-                    className="w-full px-4 py-3 pl-12 rounded-xl bg-secondary text-foreground placeholder:text-muted-foreground border border-border focus:border-primary focus:outline-none"
-                  />
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  
-                  <div className="mt-4 p-3 rounded-xl bg-card border border-border">
-                    <div className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Popular Brands</div>
-                    <div className="flex flex-wrap gap-2">
-                      {popularBrands.map(brand => (
-                        <button
-                          key={brand}
-                          onClick={() => { handleSearch(brand); setIsOpen(false); }}
-                          className="text-sm px-3 py-1.5 rounded-lg bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
-                        >
-                          {brand}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                {/* Mobile Search — opens the modal */}
+                <button
+                  onClick={() => { setIsOpen(false); setIsSearchOpen(true) }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-secondary text-muted-foreground border border-border hover:border-primary/50 transition-colors text-left"
+                >
+                  <Search className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">Search cars, brands...</span>
+                </button>
 
                 {/* Mobile Nav Links */}
                 <nav className="space-y-2">
