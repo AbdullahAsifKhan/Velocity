@@ -1,8 +1,8 @@
 'use client'
 
-import { useRef, useMemo } from 'react'
+import { useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Crown } from 'lucide-react'
 import { CarCard } from './car-card'
 import type { Car } from '@/lib/types'
 
@@ -14,14 +14,8 @@ export function TrendingSection({ cars }: TrendingSectionProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const shouldReduceMotion = useReducedMotion()
 
-  // Memoize the sort to avoid re-sorting 200+ cars on every render
-  const trendingCars = useMemo(
-    () =>
-      [...cars]
-        .sort((a, b) => b.views - a.views || a.id.localeCompare(b.id))
-        .slice(0, 6),
-    [cars]
-  )
+  // Cars come pre-curated from the server (fetchFeaturedCars)
+  // No client-side sorting needed
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -33,6 +27,8 @@ export function TrendingSection({ cars }: TrendingSectionProps) {
     }
   }
 
+  if (!cars || cars.length === 0) return null
+
   return (
     <section className="py-24">
       <div className="flex items-center justify-between mb-8">
@@ -43,8 +39,8 @@ export function TrendingSection({ cars }: TrendingSectionProps) {
             viewport={{ once: true }}
             className="flex items-center gap-2 mb-2"
           >
-            <TrendingUp className="w-5 h-5 text-primary" />
-            <span className="text-sm font-medium text-primary uppercase tracking-wider">Trending</span>
+            <Crown className="w-5 h-5 text-primary" />
+            <span className="text-sm font-medium text-primary uppercase tracking-wider">Featured</span>
           </motion.div>
           <motion.h2
             initial={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
@@ -53,7 +49,7 @@ export function TrendingSection({ cars }: TrendingSectionProps) {
             transition={{ delay: 0.1 }}
             className="text-2xl sm:text-3xl font-bold text-gradient"
           >
-            Most Viewed
+            Top Picks
           </motion.h2>
         </div>
 
@@ -77,9 +73,9 @@ export function TrendingSection({ cars }: TrendingSectionProps) {
         ref={scrollRef}
         className="flex gap-6 overflow-x-auto scrollbar-hide pb-4 -mx-4 px-4 snap-x snap-mandatory"
       >
-        {trendingCars.map((car, index) => (
+        {cars.map((car, index) => (
           <div key={car.id} className="flex-shrink-0 w-[340px] snap-start">
-            <CarCard car={car} index={index} />
+            <CarCard car={car} index={index} disableHoverLift />
           </div>
         ))}
       </div>

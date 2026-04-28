@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Outfit, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Navigation } from '@/components/navigation'
+import { Toaster } from 'sonner'
 import './globals.css'
 
 const outfit = Outfit({ 
@@ -39,7 +40,11 @@ export default function RootLayout({
       <body className={`${outfit.variable} ${geistMono.variable} font-sans antialiased noise-overlay`}>
         <Navigation />
         {children}
+        <footer className="mt-auto py-8 border-t border-border/40 text-center">
+          <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} Velocity Automotive. All rights reserved.</p>
+        </footer>
         <Analytics />
+        <Toaster position="bottom-right" theme="dark" />
       </body>
     </html>
   )

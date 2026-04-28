@@ -28,8 +28,9 @@ import {
 import { Speedometer } from '@/components/speedometer'
 import { CarCard } from '@/components/car-card'
 import { CompareBar } from '@/components/compare-bar'
-import { fetchCarById, fetchCarsList } from '@/lib/api-service'
-import { CarGallery, CarActions } from '@/components/car-details-client'
+import { fetchCarById, fetchSimilarCars, fetchModelHierarchy, extractModelFamily } from '@/lib/api-service'
+import { CarGallery, CarActions, ReportIssueButton } from '@/components/car-details-client'
+import { estimatePerformance, estimatePrice } from '@/lib/utils'
 
 export const revalidate = 3600 // Cache page for 1 hour (ISR)
 
@@ -43,10 +44,12 @@ export default async function CarDetailsPage({
 
   if (!car) notFound()
 
-  const allCarsList = await fetchCarsList()
-  const similarCars = allCarsList
-    .filter((c) => c.id !== car.id && c.type === car.type)
-    .slice(0, 4) as typeof car[]
+  // Fetch similar cars (same type, excludes other year variants of this model)
+  const similarCars = await fetchSimilarCars(car, 4) as typeof car[]
+
+  // Fetch all year variants of this exact model
+  const modelFamilyName = extractModelFamily(car.name, car.brand)
+  const fullHierarchy = await fetchModelHierarchy(car.brand, modelFamilyName)
 
   // ── Spec groups ───────────────────────────────────────────────────────────
   const powertrain = [
@@ -133,15 +136,11 @@ export default async function CarDetailsPage({
 
             <div className="flex flex-col">
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* Brand & Rating */}
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-primary uppercase tracking-wider">
                     {car.brand}
                   </span>
-                  <div className="flex items-center gap-1">
-                    <Star className="w-4 h-4 text-accent fill-accent" />
-                    <span className="font-medium">{car.rating?.toFixed(1) ?? '—'}</span>
-                  </div>
+                  <ReportIssueButton car={car} />
                 </div>
 
                 <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gradient mb-4">
@@ -152,11 +151,26 @@ export default async function CarDetailsPage({
                   {car.description}
                 </p>
 
-                {/* Price */}
-                <div className="mb-8">
-                  <span className="text-sm text-muted-foreground">Starting from</span>
-                  <div className="text-4xl font-bold text-primary">
-                    ${car.price.toLocaleString('en-US')}
+                <div className="mb-6 flex items-end justify-between">
+                  <div>
+                    <span className="text-sm text-muted-foreground">Starting from</span>
+                    <div className="text-4xl font-bold text-primary">
+                      {car.price > 0 ? `$${car.price.toLocaleString('en-US')}` : `$${estimatePrice(car).toLocaleString('en-US')}`}
+                    </div>
+                    {car.priceNote && (
+                      <p className="text-xs text-muted-foreground/80 mt-1 uppercase tracking-widest font-medium">
+                        {car.priceNote}
+                      </p>
+                    )}
+                  </div>
+                  
+                  {/* Rating moved here */}
+                  <div className="flex flex-col items-end">
+                    <span className="text-sm text-muted-foreground mb-1">User Rating</span>
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent/10 text-accent border border-accent/20">
+                      <Star className="w-4 h-4 fill-accent" />
+                      <span className="font-semibold">{car.rating?.toFixed(1) ?? '—'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -183,10 +197,10 @@ export default async function CarDetailsPage({
               Performance
             </h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
-              <Speedometer value={car.horsepower} maxValue={1200} label="Horsepower" unit="hp" />
-              <Speedometer value={car.torque} maxValue={1500} label="Torque" unit="Nm" />
-              <Speedometer value={car.acceleration} maxValue={10} label="0–100 km/h" unit="sec" />
-              <Speedometer value={car.topSpeed} maxValue={400} label="Top Speed" unit="km/h" />
+              <Speedometer value={estimatePerformance(car).hp} maxValue={1200} label="Horsepower" unit="hp" />
+              <Speedometer value={estimatePerformance(car).torque} maxValue={1500} label="Torque" unit="Nm" />
+              <Speedometer value={estimatePerformance(car).accel} maxValue={10} label="0–100 km/h" unit="sec" />
+              <Speedometer value={estimatePerformance(car).topSpeed} maxValue={400} label="Top Speed" unit="km/h" />
             </div>
           </div>
         </section>
@@ -200,6 +214,54 @@ export default async function CarDetailsPage({
           <SpecGrid title="Technology & Safety" specs={techSafety} />
           <SpecGrid title="Provenance" specs={provenance} />
         </section>
+
+        {/* Model Trim Grid — All generations of this model family */}
+        {fullHierarchy.length > 0 && (
+          <section className="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border/40">
+            <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-bold text-gradient">The {modelFamilyName} Family</h2>
+                <p className="text-muted-foreground mt-2">Explore other generations and officially recognized trims in the {car.brand} {modelFamilyName} lineup.</p>
+              </div>
+              <Link 
+                href={`/brands/${car.brand}/${modelFamilyName}`}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground font-semibold transition-all duration-300 backdrop-blur-md"
+              >
+                View Hub <ArrowUpFromLine className="w-4 h-4 rotate-90" />
+              </Link>
+            </div>
+
+            <div className="space-y-16">
+              {fullHierarchy.map((generation) => (
+                <div key={generation.name} className="space-y-6">
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-3">
+                      <Layers className="w-5 h-5 text-primary" />
+                      {generation.name}
+                    </h3>
+                    <div className="h-px bg-border/50 flex-1" />
+                    <span className="text-xs font-medium px-3 py-1 bg-secondary rounded-full text-secondary-foreground">
+                      {generation.totalVariants} Trim{generation.totalVariants !== 1 && 's'}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-8">
+                    {generation.categories.map((category) => (
+                      <div key={category.name} className="space-y-4">
+                        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">{category.name}</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                          {category.variants.map((variant, i) => (
+                            <CarCard key={variant.id} car={variant as any} index={i} />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Similar Cars */}
         {similarCars.length > 0 && (
@@ -217,15 +279,28 @@ export default async function CarDetailsPage({
       <CompareBar />
 
       {/* Data Sources Footer */}
-      {car.sources && car.sources.length > 0 && (
+      {(car.officialPageUrl || (car.sources && car.sources.length > 0)) && (
         <footer className="border-t border-border/40 py-8 bg-card/20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4">
-              Data Sources
+              Data Specification Sources
             </h3>
             <div className="flex flex-wrap gap-3">
-              {/* Deduplicate by URL before rendering */}
-              {Array.from(
+              {/* If sources relation is empty, safely fallback to OfficialPageUrl (Usually wikipedia) */}
+              {(!car.sources || car.sources.length === 0) && car.officialPageUrl && (
+                <a
+                  href={car.officialPageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors bg-accent/30 px-3 py-1.5 rounded-md border border-border/50 backdrop-blur-sm"
+                >
+                  <span className="w-2 h-2 rounded-full bg-primary/80" />
+                  Wikipedia (Wikimedia Commons)
+                </a>
+              )}
+
+              {/* Native sources list */}
+              {car.sources && car.sources.length > 0 && Array.from(
                 new Map(car.sources.map(s => [s.url ?? s.sourceName, s])).values()
               ).map((source, idx) =>
                 source.url ? (
@@ -250,9 +325,8 @@ export default async function CarDetailsPage({
                 )
               )}
             </div>
-            <p className="mt-4 text-[10px] text-muted-foreground/60 max-w-2xl">
-              Vehicle specifications are automatically aggregated from leading public sources.
-              Always refer to official manufacturer documentation for purchasing decisions.
+            <p className="mt-4 text-[10px] text-muted-foreground/60 max-w-2xl leading-relaxed">
+              Vehicle specifications and imagery are aggregated from public repositories including Wikipedia, the National Highway Traffic Safety Administration (NHTSA), and API-Ninjas. We strongly recommend verifying with official manufacturer documentation before purchasing decisions inside the application.
             </p>
           </div>
         </footer>

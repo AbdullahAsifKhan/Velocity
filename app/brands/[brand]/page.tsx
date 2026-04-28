@@ -1,22 +1,25 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Building2, ChevronRight } from 'lucide-react'
-import { CarGrid } from '@/components/car-grid'
+import { Building2, ChevronRight, Hash } from 'lucide-react'
+import { ModelGrid } from '@/components/model-grid'
 import { CompareBar } from '@/components/compare-bar'
-import { fetchCarsList } from '@/lib/api-service'
-import type { Car } from '@/lib/types'
+import { BrandLogo } from '@/components/brand-logo'
+import { fetchBrandModelFamilies } from '@/lib/api-service'
+
+export const revalidate = 3600 // ISR: revalidate every hour
 
 export default async function BrandPage({
   params,
 }: {
   params: Promise<{ brand: string }>
 }) {
-  const cars = await fetchCarsList() as Car[]
   const { brand } = await params
   const brandName = decodeURIComponent(brand)
-  const brandCars = cars.filter((car) => car.brand === brandName)
+  const models = await fetchBrandModelFamilies(brandName)
 
-  if (brandCars.length === 0) notFound()
+  if (models.length === 0) notFound()
+  
+  const totalVariants = models.reduce((acc, m) => acc + m.totalVariants, 0)
 
   return (
     <main className="min-h-screen bg-background">
@@ -24,14 +27,21 @@ export default async function BrandPage({
       <div className="pt-24 pb-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-12">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Building2 className="w-6 h-6 text-primary" />
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 flex-shrink-0 flex items-center justify-center drop-shadow-lg">
+                <BrandLogo 
+                  brand={brandName} 
+                  className="w-full h-full object-contain" 
+                  fallbackClassName="w-full h-full opacity-50"
+                />
               </div>
               <div>
                 <h1 className="text-3xl sm:text-4xl font-bold text-gradient">{brandName}</h1>
-                <p className="text-muted-foreground">
-                  {brandCars.length} {brandCars.length === 1 ? 'model' : 'models'} available
+                <p className="text-muted-foreground mt-1 text-sm font-medium">
+                  {models.length} {models.length === 1 ? 'Model Family' : 'Model Families'} available
+                  <span className="text-muted-foreground/50 ml-2 font-normal">
+                    · {totalVariants} total variants
+                  </span>
                 </p>
               </div>
             </div>
@@ -45,7 +55,7 @@ export default async function BrandPage({
             Back to All Brands
           </Link>
 
-          <CarGrid cars={brandCars} />
+          <ModelGrid brand={brandName} models={models} />
         </div>
       </div>
 

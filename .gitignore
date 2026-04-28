@@ -11,6 +11,25 @@ next.user-config.*
 # Environment variables
 .env
 .env*.local
+*.env
+
+# Internal scripts & data (not for production)
+scripts/
+ingestion/
+scratch/
+data/
+*.py
+__pycache__/
+.venv/
+tmp/
+build-log.txt
+tsc-error.txt
+check-brands.ts
+query.js
+remove-tank.ts
+analyze.py
+recommandion_plan
+Images/
 
 # Common ignores
 node_modules/

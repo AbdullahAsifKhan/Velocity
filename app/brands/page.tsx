@@ -1,16 +1,13 @@
 import Link from 'next/link'
 import { Building2, ChevronRight } from 'lucide-react'
 import { CompareBar } from '@/components/compare-bar'
-import { fetchCarsList, fetchBrands } from '@/lib/api-service'
+import { BrandLogo } from '@/components/brand-logo'
+import { fetchBrandStats } from '@/lib/api-service'
+
+export const revalidate = 3600 // ISR: revalidate every hour
 
 export default async function BrandsPage() {
-  const cars = await fetchCarsList()
-  const brands = await fetchBrands()
-
-  const brandStats = brands.map((brand) => {
-    const count = cars.filter((car) => car.brand === brand).length
-    return { name: brand, count }
-  })
+  const brandStats = await fetchBrandStats()
 
   return (
     <main className="min-h-screen bg-background">
@@ -26,7 +23,7 @@ export default async function BrandsPage() {
               <div>
                 <h1 className="text-3xl sm:text-4xl font-bold text-gradient">Brands</h1>
                 <p className="text-muted-foreground">
-                  Explore {brands.length} premium automotive brands
+                  Explore {brandStats.length} premium automotive brands
                 </p>
               </div>
             </div>
@@ -40,15 +37,22 @@ export default async function BrandsPage() {
                 prefetch={false}
                 className="group relative overflow-hidden rounded-2xl bg-card border border-border p-6 text-left transition-all duration-500 hover:border-primary/50 hover:glow-sm"
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold mb-1">{brand.name}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {brand.count} {brand.count === 1 ? 'model' : 'models'}
-                    </p>
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 flex-shrink-0 flex items-center justify-center drop-shadow-md">
+                      <BrandLogo 
+                        brand={brand.name} 
+                        className="w-full h-full object-contain" 
+                        fallbackClassName="w-full h-full opacity-50"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold mb-1">{brand.name}</h3>
+                      <p className="text-sm text-muted-foreground flex justify-between items-center pr-2">
+                        <span>{brand.count} {brand.count === 1 ? 'model' : 'models'}</span>
+                        <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                      </p>
+                    </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                </div>
               </Link>
             ))}
           </div>

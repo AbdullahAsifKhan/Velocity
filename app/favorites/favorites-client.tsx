@@ -1,21 +1,38 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Heart, ArrowRight } from 'lucide-react'
+import { Heart, ArrowRight, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { CarGrid } from '@/components/car-grid'
 import { CompareBar } from '@/components/compare-bar'
 import type { Car } from '@/lib/types'
 import { useCarStore } from '@/lib/store'
+import { fetchCarsByIds } from '@/app/actions'
 
-export function FavoritesClient({ cars }: { cars: Car[] }) {
-  const carMap = new Map(cars.map(c => [c.id, c]))
+export function FavoritesClient() {
   const { favorites } = useCarStore()
+  const [favoriteCars, setFavoriteCars] = useState<Car[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // O(1) lookups via carMap instead of nested .filter()
-  const favoriteCars = favorites
-    .map((id) => carMap.get(id))
-    .filter((car): car is Car => car !== undefined)
+  useEffect(() => {
+    const loadFavorites = async () => {
+      if (favorites.length === 0) {
+        setFavoriteCars([])
+        setLoading(false)
+        return
+      }
+      try {
+        const cars = await fetchCarsByIds(favorites)
+        setFavoriteCars(cars as Car[])
+      } catch (err) {
+        console.error('Failed to load favorites', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadFavorites()
+  }, [favorites])
 
   return (
     <main className="min-h-screen bg-background">
@@ -35,14 +52,18 @@ export function FavoritesClient({ cars }: { cars: Car[] }) {
               <div>
                 <h1 className="text-3xl sm:text-4xl font-bold text-gradient">Favorites</h1>
                 <p className="text-muted-foreground">
-                  {favoriteCars.length} {favoriteCars.length === 1 ? 'car' : 'cars'} saved
+                  {favorites.length} {favorites.length === 1 ? 'car' : 'cars'} saved
                 </p>
               </div>
             </motion.div>
           </div>
 
           {/* Content */}
-          {favoriteCars.length > 0 ? (
+          {loading ? (
+            <div className="flex justify-center items-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : favoriteCars.length > 0 ? (
             <CarGrid cars={favoriteCars} />
           ) : (
             <motion.div

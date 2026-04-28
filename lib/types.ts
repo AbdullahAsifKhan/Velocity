@@ -40,6 +40,7 @@ export interface Car {
   
   // Pricing & Provenance
   price: number
+  priceNote?: string | null
   year: number
   country?: string | null
   launchDate?: string | null

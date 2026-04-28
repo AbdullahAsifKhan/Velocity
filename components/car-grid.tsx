@@ -1,13 +1,8 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ChevronDown } from 'lucide-react'
 import { CarCard } from './car-card'
 import type { Car } from '@/lib/types'
-
-const INITIAL_COUNT = 12
-const LOAD_MORE_COUNT = 12
 
 interface CarGridProps {
   cars: Car[]
@@ -16,20 +11,7 @@ interface CarGridProps {
 }
 
 export function CarGrid({ cars, title, subtitle }: CarGridProps) {
-  const [visibleCount, setVisibleCount] = useState(INITIAL_COUNT)
   const shouldReduceMotion = useReducedMotion()
-
-  // Reset visible count when the car list changes (e.g., switching category tabs)
-  useEffect(() => {
-    setVisibleCount(INITIAL_COUNT)
-  }, [cars.length])
-
-  const handleLoadMore = useCallback(() => {
-    setVisibleCount((prev) => Math.min(prev + LOAD_MORE_COUNT, cars.length))
-  }, [cars.length])
-
-  const visibleCars = cars.slice(0, visibleCount)
-  const hasMore = visibleCount < cars.length
 
   if (cars.length === 0) {
     return (
@@ -88,22 +70,10 @@ export function CarGrid({ cars, title, subtitle }: CarGridProps) {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {visibleCars.map((car, index) => (
+        {cars.map((car, index) => (
           <CarCard key={car.id} car={car} index={index} />
         ))}
       </div>
-
-      {hasMore && (
-        <div className="flex justify-center mt-10">
-          <button
-            onClick={handleLoadMore}
-            className="inline-flex items-center gap-2 px-8 py-3 rounded-xl glass text-sm font-semibold hover:bg-secondary transition-all group"
-          >
-            Load More ({cars.length - visibleCount} remaining)
-            <ChevronDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
-          </button>
-        </div>
-      )}
     </section>
   )
 }

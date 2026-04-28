@@ -2,14 +2,18 @@
 
 import { useRef } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
-import { ArrowRight, Play, Sparkles } from 'lucide-react'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import Link from 'next/link'
-import Image from 'next/image'
 import type { Car } from '@/lib/types'
-import { isUnoptimizedUrl } from '@/lib/image'
+import { optimizeImage, cleanCarName } from '@/lib/utils'
 
 interface HeroSectionProps {
   car: Car
+}
+
+/** Returns true if the value is "real" data (not zero/null/undefined) */
+function hasValue(v: number | null | undefined): v is number {
+  return v != null && v > 0
 }
 
 export function HeroSection({ car: featuredCar }: HeroSectionProps) {
@@ -23,20 +27,26 @@ export function HeroSection({ car: featuredCar }: HeroSectionProps) {
   const bgY = useTransform(scrollYProgress, [0, 1], ['0%', '20%'])
   const contentOpacity = useTransform(scrollYProgress, [0, 0.5], [1, 0])
 
+  const hasStats = hasValue(featuredCar.horsepower) || hasValue(featuredCar.acceleration) || hasValue(featuredCar.topSpeed)
+  const heroImage = featuredCar.image || null
+
   return (
     <section ref={sectionRef} className="relative min-h-screen flex items-center overflow-hidden">
       {/* Background Image with Parallax */}
       <motion.div className="absolute inset-0" style={{ y: bgY }}>
         <div className="absolute inset-0 scale-110">
-          <Image
-            src={featuredCar.image}
-            alt={featuredCar.name}
-            fill
-            priority
-            unoptimized={isUnoptimizedUrl(featuredCar.image)}
-            className="object-cover"
-            sizes="100vw"
-          />
+          {heroImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={heroImage}
+              alt={featuredCar.name}
+              referrerPolicy="no-referrer"
+              className="absolute inset-0 w-full h-full object-cover"
+              fetchPriority="high"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-accent/10" />
+          )}
         </div>
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-background/30" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/60" />
@@ -68,7 +78,7 @@ export function HeroSection({ car: featuredCar }: HeroSectionProps) {
           >
             <span className="text-gradient">{featuredCar.brand}</span>
             <br />
-            <span className="text-foreground">{featuredCar.name.replace(featuredCar.brand + ' ', '')}</span>
+            <span className="text-foreground">{cleanCarName(featuredCar.name, featuredCar.brand)}</span>
           </motion.h1>
 
           {/* Description */}
@@ -81,30 +91,44 @@ export function HeroSection({ car: featuredCar }: HeroSectionProps) {
             {featuredCar.description}
           </motion.p>
 
-          {/* Stats with dividers */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="mt-10 flex items-center gap-0"
-          >
-            <div className="pr-8">
-              <div className="text-3xl font-semibold text-primary tabular-nums">{featuredCar.horsepower}</div>
-              <div className="text-xs text-muted-foreground uppercase tracking-widest mt-1">Horsepower</div>
-            </div>
-            <div className="w-px h-12 bg-border" />
-            <div className="px-8">
-              <div className="text-3xl font-semibold tabular-nums">{featuredCar.acceleration}s</div>
-              <div className="text-xs text-muted-foreground uppercase tracking-widest mt-1">0-100 km/h</div>
-            </div>
-            <div className="w-px h-12 bg-border" />
-            <div className="pl-8">
-              <div className="text-3xl font-semibold tabular-nums">{featuredCar.topSpeed}</div>
-              <div className="text-xs text-muted-foreground uppercase tracking-widest mt-1">km/h Top Speed</div>
-            </div>
-          </motion.div>
+          {/* Stats — only show if we have real data */}
+          {hasStats && (
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              className="mt-10 flex items-center gap-0"
+            >
+              {hasValue(featuredCar.horsepower) && (
+                <>
+                  <div className="pr-8">
+                    <div className="text-3xl font-semibold text-primary tabular-nums">{featuredCar.horsepower}</div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-widest mt-1">Horsepower</div>
+                  </div>
+                </>
+              )}
+              {hasValue(featuredCar.acceleration) && (
+                <>
+                  {hasValue(featuredCar.horsepower) && <div className="w-px h-12 bg-border" />}
+                  <div className="px-8">
+                    <div className="text-3xl font-semibold tabular-nums">{featuredCar.acceleration}s</div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-widest mt-1">0-100 km/h</div>
+                  </div>
+                </>
+              )}
+              {hasValue(featuredCar.topSpeed) && (
+                <>
+                  {(hasValue(featuredCar.horsepower) || hasValue(featuredCar.acceleration)) && <div className="w-px h-12 bg-border" />}
+                  <div className="pl-8">
+                    <div className="text-3xl font-semibold tabular-nums">{featuredCar.topSpeed}</div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-widest mt-1">km/h Top Speed</div>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          )}
 
-          {/* CTAs */}
+          {/* CTA */}
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -118,10 +142,6 @@ export function HeroSection({ car: featuredCar }: HeroSectionProps) {
               Explore
               <ArrowRight className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" />
             </Link>
-            <button className="group inline-flex items-center gap-3 px-8 py-4 rounded-xl glass font-semibold hover:bg-secondary transition-all duration-500 hover:scale-[1.02]">
-              <Play className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />
-              Watch Video
-            </button>
           </motion.div>
         </div>
       </motion.div>

@@ -14,7 +14,6 @@ const navLinks = [
   { href: '/brands', label: 'Brands' },
   { href: '/compare', label: 'Compare' },
   { href: '/garage', label: 'Garage' },
-  { href: '/favorites', label: 'Favorites' },
 ]
 
 export function Navigation() {
@@ -111,17 +110,6 @@ export function Navigation() {
                 )}
               </Link>
 
-              <Link
-                href="/compare"
-                className="relative p-2 rounded-lg hover:bg-secondary transition-colors"
-              >
-                <LayoutGrid className="w-5 h-5" />
-                {mounted && compareList.length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent text-accent-foreground text-xs flex items-center justify-center">
-                    {compareList.length}
-                  </span>
-                )}
-              </Link>
             </div>
 
             {/* Mobile: search icon + hamburger */}
@@ -196,14 +184,6 @@ export function Navigation() {
                     >
                       <Heart className="w-5 h-5" />
                       <span>Favorites ({favorites.length})</span>
-                    </Link>
-                    <Link
-                      href="/compare"
-                      onClick={() => setIsOpen(false)}
-                      className="flex-1 flex items-center justify-center gap-2 p-4 rounded-xl bg-secondary"
-                    >
-                      <LayoutGrid className="w-5 h-5" />
-                      <span>Compare ({compareList.length})</span>
                     </Link>
                   </div>
                 )}

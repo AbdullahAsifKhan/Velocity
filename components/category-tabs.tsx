@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { useCarStore } from '@/lib/store'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { types } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { Car, Truck, Zap, Crown, Gauge } from 'lucide-react'
@@ -16,11 +16,14 @@ const typeIcons: Record<string, typeof Gauge> = {
   Luxury: Crown,
   Hatchback: Car,
   Pickup: Truck,
+  Wagon: Car,
 }
 
 export function CategoryTabs() {
   const [mounted, setMounted] = useState(false)
-  const { selectedType, setSelectedType } = useCarStore()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const selectedType = searchParams.get('type') || 'All'
   const shouldReduceMotion = useReducedMotion()
 
   useEffect(() => {
@@ -28,6 +31,18 @@ export function CategoryTabs() {
   }, [])
 
   if (!mounted) return <div className="h-12 bg-secondary/50 rounded-xl" />
+
+  const handleSelect = (type: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (type === 'All') {
+      params.delete('type')
+    } else {
+      params.set('type', type)
+    }
+    // Reset to page 1 on filter change
+    params.delete('page')
+    router.replace(`/?${params.toString()}`, { scroll: false })
+  }
 
   return (
     <div className="w-full overflow-x-auto scrollbar-hide">
@@ -39,7 +54,7 @@ export function CategoryTabs() {
           return (
             <motion.button
               key={type}
-              onClick={() => setSelectedType(type)}
+              onClick={() => handleSelect(type)}
               whileTap={{ scale: 0.95 }}
               className={cn(
                 "relative flex items-center gap-2 px-5 py-3 rounded-xl font-medium text-sm transition-all duration-300",

@@ -1,22 +1,45 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Warehouse, Plus, Trash2, ChevronRight, X, FolderPlus } from 'lucide-react'
-import Image from 'next/image'
+import { Warehouse, Plus, Trash2, ChevronRight, X, FolderPlus, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { CompareBar } from '@/components/compare-bar'
 import type { Car } from '@/lib/types'
 import { useCarStore } from '@/lib/store'
-import { cn } from '@/lib/utils'
-import { isUnoptimizedUrl } from '@/lib/image'
+import { cn, optimizeImage, cleanCarName } from '@/lib/utils'
+import { fetchCarsByIds } from '@/app/actions'
 
-export function GarageClient({ cars }: { cars: Car[] }) {
-  const carMap = new Map(cars.map(c => [c.id, c]))
+export function GarageClient() {
   const { garage, createCollection, deleteCollection, removeFromCollection } = useCarStore()
   const [isCreating, setIsCreating] = useState(false)
   const [newCollectionName, setNewCollectionName] = useState('')
   const [expandedCollection, setExpandedCollection] = useState<string | null>(null)
+  const [carMap, setCarMap] = useState<Map<string, Car>>(new Map())
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const loadGarageCars = async () => {
+      const allIds = new Set<string>()
+      garage.forEach(col => col.carIds.forEach(id => allIds.add(id)))
+      
+      if (allIds.size === 0) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        const cars = await fetchCarsByIds(Array.from(allIds)) as Car[]
+        const map = new Map(cars.map(c => [c.id, c]))
+        setCarMap(map)
+      } catch (err) {
+        console.error('Failed to load garage cars', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadGarageCars()
+  }, [garage])
 
   const handleCreateCollection = () => {
     if (newCollectionName.trim()) {
@@ -154,16 +177,15 @@ export function GarageClient({ cars }: { cars: Car[] }) {
                       {/* Preview Images */}
                       <div className="hidden sm:flex -space-x-3">
                         {collectionCars.slice(0, 3).map((car) => (
-                          <div
+                            <div
                             key={car.id}
                             className="w-10 h-10 rounded-lg overflow-hidden border-2 border-card"
                           >
-                            <Image
-                              src={car.image}
-                              alt={car.name}
-                              width={40}
-                              height={40}
-                              unoptimized={isUnoptimizedUrl(car.image)}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={car.image || ''}
+                              alt={cleanCarName(car.name, car.brand)}
+                              referrerPolicy="no-referrer"
                               className="w-full h-full object-cover"
                             />
                           </div>
@@ -201,17 +223,16 @@ export function GarageClient({ cars }: { cars: Car[] }) {
                                     className="flex items-center gap-4 flex-1"
                                   >
                                     <div className="w-16 h-12 rounded-lg overflow-hidden flex-shrink-0">
-                                      <Image
-                                        src={car.image}
-                                        alt={car.name}
-                                        width={64}
-                                        height={48}
-                                        unoptimized={isUnoptimizedUrl(car.image)}
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={car.image || ''}
+                                        alt={cleanCarName(car.name, car.brand)}
+                                        referrerPolicy="no-referrer"
                                         className="w-full h-full object-cover"
                                       />
                                     </div>
                                     <div className="min-w-0">
-                                      <h4 className="font-medium truncate">{car.name}</h4>
+                                      <h4 className="font-medium truncate">{cleanCarName(car.name, car.brand)}</h4>
                                       <p className="text-sm text-muted-foreground">{car.brand}</p>
                                     </div>
                                   </Link>

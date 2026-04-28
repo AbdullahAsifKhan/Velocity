@@ -1,6 +1,8 @@
-import { prisma } from '@/lib/api-service'
+import { searchCarsFullPage } from '@/lib/api-service'
 import { SearchClient } from './search-client'
 import type { Metadata } from 'next'
+
+export const revalidate = 300 // ISR: revalidate every 5 minutes
 
 interface Props {
   searchParams: Promise<{ q?: string }>
@@ -20,45 +22,8 @@ export default async function SearchPage({ searchParams }: Props) {
   const { q = '' } = await searchParams
   const query = q.trim()
 
-  let cars: any[] = []
-  if (query.length > 0) {
-    cars = await prisma.car.findMany({
-      where: {
-        OR: [
-          { name: { contains: query, mode: 'insensitive' } },
-          { brand: { contains: query, mode: 'insensitive' } },
-          { type: { contains: query, mode: 'insensitive' } },
-          { fuelType: { contains: query, mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        brand: true,
-        type: true,
-        fuelType: true,
-        price: true,
-        year: true,
-        image: true,
-        horsepower: true,
-        torque: true,
-        acceleration: true,
-        topSpeed: true,
-        rating: true,
-        views: true,
-        favorites: true,
-        featured: true,
-        description: true,
-        drivetrain: true,
-        seats: true,
-        weight: true,
-        mileage: true,
-        engine: true,
-        transmission: true,
-      },
-      orderBy: { views: 'desc' },
-    })
-  }
+  // Use the deduplicated search — no more year-variant flooding
+  const cars = query.length > 0 ? await searchCarsFullPage(query) : []
 
-  return <SearchClient cars={cars} query={query} />
+  return <SearchClient cars={cars as any} query={query} />
 }

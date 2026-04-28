@@ -1,19 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { X, ArrowRight } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { useCarStore } from '@/lib/store'
 import type { Car } from '@/lib/types'
-import { isUnoptimizedUrl } from '@/lib/image'
+import { optimizeImage } from '@/lib/utils'
+
+const FETCH_TIMEOUT_MS = 15_000
 
 export function CompareBar() {
   const [mounted, setMounted] = useState(false)
   const [selectedCars, setSelectedCars] = useState<Car[]>([])
+  const [fetchError, setFetchError] = useState(false)
   const { compareList, removeFromCompare, clearCompare } = useCarStore()
   const shouldReduceMotion = useReducedMotion()
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -21,11 +25,42 @@ export function CompareBar() {
 
   useEffect(() => {
     if (compareList.length > 0) {
-      fetch(`/api/cars?ids=${compareList.join(',')}`)
-        .then(res => res.json())
-        .then(data => setSelectedCars(data))
+      // Cancel any in-flight request
+      abortRef.current?.abort()
+
+      const controller = new AbortController()
+      abortRef.current = controller
+
+      // Timeout after FETCH_TIMEOUT_MS
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+      fetch(`/api/cars?ids=${compareList.join(',')}`, {
+        signal: controller.signal,
+      })
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
+        .then(data => {
+          if (Array.isArray(data)) {
+            setSelectedCars(data)
+            setFetchError(false)
+          } else {
+            throw new Error('Unexpected response format')
+          }
+        })
+        .catch(err => {
+          if (err.name === 'AbortError') return
+          console.error('CompareBar fetch failed:', err)
+          setFetchError(true)
+          toast.error('Failed to load compare cars. Please try again.')
+        })
+        .finally(() => {
+          clearTimeout(timeoutId)
+        })
     } else {
       setSelectedCars([])
+      setFetchError(false)
     }
   }, [compareList])
 
@@ -42,40 +77,59 @@ export function CompareBar() {
         <div className="max-w-4xl mx-auto">
           <div className="glass rounded-2xl p-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide">
-              {selectedCars.map((car) => (
-                <motion.div
-                  key={car.id}
-                  initial={{ scale: shouldReduceMotion ? 1 : 0 }}
-                  animate={{ scale: 1 }}
-                  exit={{ scale: shouldReduceMotion ? 1 : 0 }}
-                  className="relative flex-shrink-0"
-                >
-                  <div className="w-16 h-16 rounded-xl overflow-hidden border border-border">
-                    <Image
-                      src={car.image}
-                      alt={car.name}
-                      width={64}
-                      height={64}
-                      unoptimized={isUnoptimizedUrl(car.image)}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
+              {fetchError ? (
+                <p className="text-sm text-destructive px-2">
+                  Could not load cars.{' '}
                   <button
-                    onClick={() => removeFromCompare(car.id)}
-                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+                    onClick={() => {
+                      setFetchError(false)
+                      // Trigger re-fetch by toggling compareList effect
+                      const ids = [...compareList]
+                      clearCompare()
+                      setTimeout(() => ids.forEach(id => useCarStore.getState().addToCompare(id)), 50)
+                    }}
+                    className="underline hover:text-foreground transition-colors"
                   >
-                    <X className="w-3 h-3" />
+                    Retry
                   </button>
-                </motion.div>
-              ))}
+                </p>
+              ) : (
+                <>
+                  {selectedCars.map((car) => (
+                    <motion.div
+                      key={car.id}
+                      initial={{ scale: shouldReduceMotion ? 1 : 0 }}
+                      animate={{ scale: 1 }}
+                      exit={{ scale: shouldReduceMotion ? 1 : 0 }}
+                      className="relative flex-shrink-0"
+                    >
+                      <div className="w-16 h-16 rounded-xl overflow-hidden border border-border">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={car.image || ''}
+                          alt={car.name}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <button
+                        onClick={() => removeFromCompare(car.id)}
+                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </motion.div>
+                  ))}
 
-              {/* Empty slots */}
-              {Array.from({ length: 4 - selectedCars.length }).map((_, i) => (
-                <div
-                  key={`empty-${i}`}
-                  className="w-16 h-16 rounded-xl border-2 border-dashed border-border flex-shrink-0"
-                />
-              ))}
+                  {/* Empty slots */}
+                  {Array.from({ length: 4 - selectedCars.length }).map((_, i) => (
+                    <div
+                      key={`empty-${i}`}
+                      className="w-16 h-16 rounded-xl border-2 border-dashed border-border flex-shrink-0"
+                    />
+                  ))}
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-3">

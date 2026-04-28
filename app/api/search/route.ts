@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/api-service'
+import { searchCarsDeduped } from '@/lib/api-service'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim() ?? ''
@@ -8,29 +9,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json([])
   }
 
-  const cars = await prisma.car.findMany({
-    where: {
-      OR: [
-        { name: { contains: q, mode: 'insensitive' } },
-        { brand: { contains: q, mode: 'insensitive' } },
-        { type: { contains: q, mode: 'insensitive' } },
-      ],
-    },
-    select: {
-      id: true,
-      name: true,
-      brand: true,
-      type: true,
-      price: true,
-      image: true,
-    },
-    take: 8,
-    orderBy: { views: 'desc' },
-  })
+  try {
+    // Deduplicated search — returns unique models only
+    const cars = await searchCarsDeduped(q, 8)
 
-  return NextResponse.json(cars, {
-    headers: {
-      'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-    },
-  })
+    return NextResponse.json(cars, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      },
+    })
+  } catch (error) {
+    logger.error('Search API failed', {
+      path: '/api/search',
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      statusCode: 500,
+      meta: { query: q },
+    })
+    return NextResponse.json(
+      { error: 'Search temporarily unavailable. Please try again.' },
+      { status: 500 }
+    )
+  }
 }

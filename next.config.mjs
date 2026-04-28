@@ -1,32 +1,40 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'upload.wikimedia.org',
-        pathname: '/wikipedia/commons/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'commons.wikimedia.org',
-        pathname: '/wiki/Special:FilePath/**',
-      },
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
-    ],
-    // Cache optimized images for 30 days
-    minimumCacheTTL: 2592000,
+    loader: 'custom',
+    loaderFile: './lib/image-loader.ts',
   },
-  experimental: {
-    turbopack: {
-      root: '.',
-    },
+  // Security headers
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+        ],
+      },
+      {
+        source: '/images/:all*(svg|jpg|png|webp|avif)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          }
+        ],
+      },
+      {
+        source: '/_next/image(.*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          }
+        ],
+      },
+    ]
   },
 }
 

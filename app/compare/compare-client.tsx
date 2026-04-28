@@ -1,9 +1,11 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { LayoutGrid, X, Plus, ArrowRight, Zap, Activity, Clock, Gauge, Fuel, DollarSign } from 'lucide-react'
+import { LayoutGrid, X, Plus, ArrowRight, Zap, Activity, Clock, Gauge, Fuel, DollarSign, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import type { Car } from '@/lib/types'
 import { useCarStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -18,14 +20,49 @@ const comparisonSpecs = [
   { key: 'engine', label: 'Engine', icon: Activity, format: (v: string) => v },
 ] as const
 
-export function CompareClient({ cars }: { cars: Car[] }) {
-  const carMap = new Map(cars.map(c => [c.id, c]))
+export function CompareClient() {
   const { compareList, removeFromCompare, clearCompare } = useCarStore()
+  const [selectedCars, setSelectedCars] = useState<Car[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  // O(1) lookups via carMap with proper type narrowing
-  const selectedCars = compareList
-    .map((id) => carMap.get(id))
-    .filter((car): car is Car => car !== undefined)
+  useEffect(() => {
+    if (compareList.length === 0) {
+      setSelectedCars([])
+      setIsLoading(false)
+      return
+    }
+
+    setIsLoading(true)
+    const controller = new AbortController()
+    
+    fetch(`/api/cars?ids=${compareList.join(',')}`, { signal: controller.signal })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch')
+        return res.json()
+      })
+      .then(data => {
+        if (Array.isArray(data)) {
+          // Keep cars in the order they were added to compareList
+          const fetchedCarsMap = new Map(data.map(c => [c.id, c]))
+          const orderedCars = compareList
+            .map(id => fetchedCarsMap.get(id))
+            .filter((car): car is Car => car !== undefined)
+          
+          setSelectedCars(orderedCars)
+        }
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error(err)
+          toast.error('Failed to load comparison data')
+        }
+      })
+      .finally(() => {
+        setIsLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [compareList])
 
   /** Determine which car "wins" for a given spec (higher is better, unless reverse). */
   const getWinner = (key: string, reverse = false): number | null => {
@@ -65,8 +102,9 @@ export function CompareClient({ cars }: { cars: Car[] }) {
               </div>
               <div>
                 <h1 className="text-3xl sm:text-4xl font-bold text-gradient">Compare</h1>
-                <p className="text-muted-foreground">
+                <p className="text-muted-foreground flex items-center gap-2">
                   {selectedCars.length} of 4 cars selected
+                  {isLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
                 </p>
               </div>
             </motion.div>

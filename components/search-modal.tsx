@@ -4,10 +4,15 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, X, ArrowRight, Zap, Tag, Loader2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, estimatePrice, cleanCarName } from '@/lib/utils'
 
-const POPULAR_BRANDS = ['Porsche', 'Ferrari', 'BMW', 'Mercedes', 'Lamborghini', 'Tesla', 'Audi', 'McLaren']
-const QUICK_SEARCHES = ['Sports cars', 'Electric cars', 'SUVs', 'Luxury']
+const POPULAR_BRANDS = ['Porsche', 'Ferrari', 'BMW', 'Mercedes-Benz', 'Lamborghini', 'Tesla', 'Audi', 'McLaren']
+const QUICK_SEARCHES = [
+  { label: 'Sports cars', query: 'Sports' },
+  { label: 'Electric cars', query: 'Electric' },
+  { label: 'SUVs', query: 'SUV' },
+  { label: 'Luxury', query: 'Luxury' }
+]
 
 interface SearchResult {
   id: string
@@ -16,6 +21,8 @@ interface SearchResult {
   type: string
   price: number
   image: string
+  horsepower?: number
+  year?: number
 }
 
 interface SearchModalProps {
@@ -28,10 +35,12 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const [activeIndex, setActiveIndex] = useState(-1)
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const queryCache = useRef(new Map<string, SearchResult[]>())
   const router = useRouter()
 
   // Debounced API search
@@ -45,27 +54,47 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
     if (trimmed.length === 0) {
       setResults([])
       setLoading(false)
+      setSearchError(null)
       return
     }
 
     setLoading(true)
+
+    // Check cache first for instant results
+    if (queryCache.current.has(trimmed)) {
+      setResults(queryCache.current.get(trimmed) || [])
+      setLoading(false)
+      setSearchError(null)
+      return
+    }
+
     debounceRef.current = setTimeout(async () => {
       try {
         const controller = new AbortController()
         abortRef.current = controller
+        // 10s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 10_000)
         const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
           signal: controller.signal,
         })
+        clearTimeout(timeoutId)
         if (res.ok) {
           const data = await res.json()
+          queryCache.current.set(trimmed, data)
           setResults(data)
+          setSearchError(null)
+        } else {
+          setSearchError('Search unavailable. Please try again.')
         }
       } catch (e: any) {
-        if (e.name !== 'AbortError') console.error('Search failed:', e)
+        if (e.name !== 'AbortError') {
+          console.error('Search failed:', e)
+          setSearchError(e.name === 'AbortError' ? null : 'Search timed out. Please try again.')
+        }
       } finally {
         setLoading(false)
       }
-    }, 250)
+    }, 150)
   }, [])
 
   // Reset on open/close
@@ -98,7 +127,20 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
 
   const showAllResults = useCallback((q: string) => {
     onClose()
-    router.push(`/search?q=${encodeURIComponent(q)}`)
+    const qLower = q.trim().toLowerCase()
+    const knownBrands = ['porsche', 'ferrari', 'bmw', 'mercedes', 'mercedes-benz', 'lamborghini', 'tesla', 'audi', 'mclaren', 'toyota', 'honda', 'ford', 'chevrolet', 'dodge', 'nissan', 'hyundai', 'kia', 'volvo', 'mazda', 'subaru', 'lexus', 'bugatti', 'koenigsegg', 'pagani', 'aston martin', 'maserati', 'bentley', 'rolls-royce', 'jaguar', 'land rover', 'fiat', 'mitsubishi', 'suzuki', 'acura', 'infiniti', 'genesis', 'alfa romeo', 'cadillac', 'lincoln', 'chrysler', 'buick', 'gmc', 'ram', 'jeep', 'pontiac', 'saturn', 'oldsmobile', 'plymouth', 'shelby', 'alpine']
+    
+    // Quick normalize for Mercedes
+    let match = knownBrands.find(b => b === qLower)
+    if (match === 'mercedes') match = 'mercedes-benz'
+    
+    if (match) {
+      // Find proper capitalization from POPULAR_BRANDS or fallback
+      const capitalized = ['Porsche', 'Ferrari', 'BMW', 'Mercedes-Benz', 'Lamborghini', 'Tesla', 'Audi', 'McLaren'].find(b => b.toLowerCase() === match) || match.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+      router.push(`/brands/${capitalized.replace('Bmw', 'BMW').replace('Gmc', 'GMC').replace('Ram', 'RAM')}`)
+    } else {
+      router.push(`/search?q=${encodeURIComponent(q)}`)
+    }
   }, [router, onClose])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,19 +253,20 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                                 {car.image && (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
-                                    src={car.image}
-                                    alt={car.name}
+                                    src={car.image || ''}
+                                    alt={cleanCarName(car.name, car.brand)}
                                     className="w-full h-full object-cover"
                                     loading="lazy"
+                                    referrerPolicy="no-referrer"
                                     onError={e => (e.currentTarget.style.display = 'none')}
                                   />
                                 )}
                               </div>
 
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold truncate">{car.name}</div>
+                                <div className="text-sm font-semibold truncate">{cleanCarName(car.name, car.brand)}</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {car.brand} · {car.type} · ${car.price.toLocaleString()}
+                                  {car.brand} · {car.type} · ${car.price > 0 ? car.price.toLocaleString() : estimatePrice(car as any).toLocaleString()}
                                 </div>
                               </div>
 
@@ -249,8 +292,21 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                     </div>
                   )}
 
+                  {/* Error state */}
+                  {searchError && (
+                    <div className="py-8 text-center text-sm">
+                      <p className="text-destructive mb-2">{searchError}</p>
+                      <button
+                        onClick={() => { setSearchError(null); search(query) }}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
                   {/* Empty state */}
-                  {query.trim() && results.length === 0 && !loading && (
+                  {query.trim() && results.length === 0 && !loading && !searchError && (
                     <div className="py-12 text-center text-muted-foreground text-sm">
                       No cars found for &ldquo;{query}&rdquo;
                     </div>
@@ -286,11 +342,11 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                         <div className="grid grid-cols-2 gap-2">
                           {QUICK_SEARCHES.map(q => (
                             <button
-                              key={q}
-                              onClick={() => showAllResults(q)}
+                              key={q.label}
+                              onClick={() => showAllResults(q.query)}
                               className="text-sm text-left px-3 py-2 rounded-lg bg-secondary/60 hover:bg-secondary transition-colors"
                             >
-                              {q}
+                              {q.label}
                             </button>
                           ))}
                         </div>

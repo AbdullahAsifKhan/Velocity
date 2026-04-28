@@ -1,58 +1,134 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Shuffle } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { HeroSection } from '@/components/hero-section'
 import { CategoryTabs } from '@/components/category-tabs'
 import { CarGrid } from '@/components/car-grid'
 import { TrendingSection } from '@/components/trending-section'
 import { CompareBar } from '@/components/compare-bar'
 import type { Car } from '@/lib/types'
-import { useCarStore, filterCars } from '@/lib/store'
+import { useCarStore } from '@/lib/store'
+import { Loader2 } from 'lucide-react'
+import { loadMoreCars } from './actions'
 
-export function HomeClient({ cars }: { cars: Car[] }) {
+export function HomeClient({ 
+  initialCars, 
+  totalPages, 
+  currentPage, 
+  totalCars,
+  carOfTheDay,
+  featuredCars,
+}: { 
+  initialCars: Car[], 
+  totalPages: number, 
+  currentPage: number, 
+  totalCars: number,
+  carOfTheDay: Car | null,
+  featuredCars: Car[],
+}) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [mounted, setMounted] = useState(false)
-  const { searchQuery, selectedType, setSearchQuery, setSelectedType } = useCarStore()
+  const { searchQuery, setSearchQuery } = useCarStore()
+  
+  const [cars, setCars] = useState(initialCars)
+  const [page, setPage] = useState(currentPage)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+
+  // Reset accumulated cars when initialCars changes (e.g. category filter changes)
+  useEffect(() => {
+    setCars(initialCars)
+    setPage(1)
+  }, [initialCars])
 
   useEffect(() => {
-    // Clear persisted filters so the "All Cars" section always starts clean
-    if (searchQuery !== '' || selectedType !== 'All') {
+    if (searchQuery !== '') {
       setSearchQuery('')
-      setSelectedType('All')
     }
     setMounted(true)
   }, [])
 
   const handleSurpriseMe = () => {
     const randomCar = cars[Math.floor(Math.random() * cars.length)]
-    router.push(`/car/${randomCar.id}`)
+    if (randomCar) router.push(`/car/${randomCar.id}`)
   }
 
-  // Memoize filtered + sorted lists to avoid recomputing on every render
-  const filteredCars = useMemo(
-    () => (mounted ? filterCars(cars, searchQuery, selectedType) : cars),
-    [mounted, searchQuery, selectedType]
+  // Use server-provided car of the day, or fall back to first car with image
+  const featuredCar = useMemo(
+    () => carOfTheDay || cars.find((car) => car.image) || cars[0],
+    [carOfTheDay, cars]
   )
 
-  // Find the featured car to pass to hero
-  const featuredCar = useMemo(
-    () => cars.find((car) => car.featured) || cars[0],
-    [cars]
-  )
+  const viewedTypes = useCarStore((s) => s.viewedTypes)
+  const viewedSegments = useCarStore((s) => s.viewedSegments)
+
+  const handleLoadMore = useCallback(async () => {
+    if (loadingMore || page >= totalPages) return
+    setLoadingMore(true)
+    const nextPage = page + 1
+    try {
+      const type = searchParams.get('type') || 'All'
+      // Pass session context for personalized ranking on subsequent pages
+      const sessionCtx = (viewedTypes.length > 0 || viewedSegments.length > 0)
+        ? { types: viewedTypes, segments: viewedSegments }
+        : undefined
+      const newCars = await loadMoreCars(nextPage, '', type, sessionCtx)
+      setCars(prev => {
+        // Prevent duplicates in case of race conditions
+        const existingIds = new Set(prev.map(c => c.id))
+        const uniqueNewCars = (newCars as Car[]).filter(c => !existingIds.has(c.id))
+        return [...prev, ...uniqueNewCars]
+      })
+      setPage(nextPage)
+    } catch (error) {
+      console.error('Failed to load more cars', error)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [loadingMore, page, totalPages, searchParams, viewedTypes, viewedSegments])
+
+  // Intersection Observer for Infinite Scroll
+  useEffect(() => {
+    if (loadingMore || page >= totalPages) return
+
+    const handleObserver = (entries: IntersectionObserverEntry[]) => {
+      const target = entries[0]
+      if (target.isIntersecting) {
+        handleLoadMore()
+      }
+    }
+
+    // Set up observer with 200px margin so it starts fetching *before* hitting the very bottom
+    observerRef.current = new IntersectionObserver(handleObserver, {
+      root: null,
+      rootMargin: '200px',
+      threshold: 0
+    })
+
+    if (loadMoreRef.current) {
+      observerRef.current.observe(loadMoreRef.current)
+    }
+
+    return () => {
+      if (observerRef.current) observerRef.current.disconnect()
+    }
+  }, [handleLoadMore, loadingMore, page, totalPages])
 
   return (
     <main className="min-h-screen bg-background">
 
       {/* Hero Section */}
-      <HeroSection car={featuredCar} />
+      {featuredCar && <HeroSection car={featuredCar} />}
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
-        {/* Trending Section */}
-        <TrendingSection cars={cars} />
+        {/* Featured Section — server-curated best cars */}
+        <TrendingSection cars={featuredCars} />
 
         {/* Category Filter & All Cars */}
         <section className="py-24 border-t border-border/40">
@@ -73,7 +149,7 @@ export function HomeClient({ cars }: { cars: Car[] }) {
                 transition={{ delay: 0.1 }}
                 className="mt-2 text-muted-foreground"
               >
-                Explore our complete collection of {cars.length} vehicles
+                Explore our complete collection of {totalCars.toLocaleString()} vehicles
               </motion.p>
             </div>
 
@@ -91,7 +167,27 @@ export function HomeClient({ cars }: { cars: Car[] }) {
             <CategoryTabs />
           </div>
 
-          <CarGrid cars={filteredCars} />
+          <CarGrid cars={cars} />
+
+          {/* Infinite Scroll Trigger & Load More Button */}
+          {page < totalPages && (
+            <div ref={loadMoreRef} className="mt-12 flex justify-center py-8">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl glass hover:bg-secondary border border-border/40 font-medium transition-all"
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    Loading...
+                  </>
+                ) : (
+                  'Load More'
+                )}
+              </button>
+            </div>
+          )}
         </section>
       </div>
 

@@ -1,20 +1,37 @@
 {
   "sourcePriority": [
     "nhtsa",
-    "unsplash",
-    "mock_specs",
+    "api_ninjas",
     "wikipedia",
-    "google_manufacturer",
-    "google_web"
+    "google_images",
+    "back4app",
+    "mock_specs"
   ],
   "sources": {
-    "google_web": {
+    "nhtsa": {
       "enabled": true,
-      "minIntervalSeconds": 1.0
+      "minIntervalSeconds": 0.3,
+      "description": "Source of truth — free US government API, no auth"
+    },
+    "api_ninjas": {
+      "enabled": true,
+      "minIntervalSeconds": 1.0,
+      "description": "Technical specs (HP, MPG, drivetrain)"
+    },
+    "wikipedia": {
+      "enabled": true,
+      "minIntervalSeconds": 0.5,
+      "description": "Deep specs from Wikipedia infoboxes"
+    },
+    "google_images": {
+      "enabled": true,
+      "minIntervalSeconds": 1.5,
+      "description": "High-quality car images via Google CSE (100/day free)"
     },
     "mock_specs": {
-      "enabled": true,
-      "minIntervalSeconds": 0
+      "enabled": false,
+      "minIntervalSeconds": 0,
+      "description": "Development mock data — disabled in production"
     }
   }
 }

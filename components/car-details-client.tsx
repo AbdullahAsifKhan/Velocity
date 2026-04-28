@@ -2,54 +2,73 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import Image from 'next/image'
-import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2, Car as CarIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2, AlertTriangle, Car as CarIcon, Flag } from 'lucide-react'
 import { useCarStore } from '@/lib/store'
 import type { Car } from '@/lib/types'
-import { cn } from '@/lib/utils'
-import { isUnoptimizedUrl } from '@/lib/image'
+import { cn, optimizeImage } from '@/lib/utils'
+import { ReportErrorModal } from './report-error-modal'
 
 export function CarGallery({ car }: { car: Car }) {
   const [selectedImage, setSelectedImage] = useState(0)
   const [imgErrors, setImgErrors] = useState<Set<number>>(new Set())
 
+  // ── Behavioral tracking: record this car view ─────────────────────────────
+  const addViewedCar = useCarStore((s) => s.addViewedCar)
+  const sessionId = useCarStore((s) => s.sessionId)
+  const viewedCarIds = useCarStore((s) => s.viewedCarIds)
+
+  useEffect(() => {
+    if (!car?.id || !sessionId) return
+
+    // Record in local session state
+    addViewedCar(car.id, car.type || 'Unknown', car.brand || 'Unknown')
+
+    // Fire tracking event (fire-and-forget)
+    fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'view',
+        carId: car.id,
+        sessionId,
+        viewedCarIds: viewedCarIds.slice(-10),
+      }),
+    }).catch(() => {}) // silently ignore failures
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [car?.id])
+
+  const gallery = car.gallery && car.gallery.length > 0 ? car.gallery : (car.image ? [car.image] : [])
+  const currentSrc = gallery[selectedImage] || null
+  const hasError = imgErrors.has(selectedImage)
+
   const handleImageError = useCallback((index: number) => {
     setImgErrors(prev => new Set(prev).add(index))
   }, [])
-
-  const gallery = car.gallery ?? []
-  const currentSrc = gallery[selectedImage] || car.image
-  const hasError = imgErrors.has(selectedImage)
   
   return (
     <div className="space-y-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="relative aspect-video rounded-2xl overflow-hidden bg-card"
-      >
+      <div className="relative aspect-video w-full rounded-3xl overflow-hidden glass border border-border/40 hover-lift isolate shadow-2xl">
         <AnimatePresence mode="wait">
           <motion.div
             key={selectedImage}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, scale: 1.05 }}
+            animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
             className="absolute inset-0"
           >
-            {hasError ? (
+            {hasError || !currentSrc ? (
               <div className="absolute inset-0 bg-gradient-to-br from-secondary via-card to-secondary/80 flex flex-col items-center justify-center gap-3">
                 <CarIcon className="w-16 h-16 text-muted-foreground/40" />
                 <span className="text-sm text-muted-foreground/60 font-medium">{car.brand} {car.name}</span>
               </div>
             ) : (
-              <Image
-                src={currentSrc}
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={currentSrc || ''}
                 alt={car.name}
-                fill
-                unoptimized={isUnoptimizedUrl(currentSrc)}
-                className="object-cover"
-                sizes="(max-width: 1024px) 100vw, 50vw"
-                priority
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover"
                 onError={() => handleImageError(selectedImage)}
               />
             )}
@@ -72,10 +91,10 @@ export function CarGallery({ car }: { car: Car }) {
             </button>
           </>
         )}
-      </motion.div>
+      </div>
 
       {gallery.length > 1 && (
-        <div className="flex gap-3 overflow-x-auto scrollbar-hide">
+        <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none snap-x mask-fade-edges">
           {gallery.map((img, index) => (
             <button
               key={index}
@@ -92,13 +111,12 @@ export function CarGallery({ car }: { car: Car }) {
                   <CarIcon className="w-6 h-6 text-muted-foreground/40" />
                 </div>
               ) : (
-                <Image
-                  src={img}
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={img || ''}
                   alt={`${car.name} view ${index + 1}`}
-                  fill
-                  unoptimized={isUnoptimizedUrl(img)}
-                  className="object-cover"
-                  sizes="96px"
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover"
                   onError={() => handleImageError(index)}
                 />
               )}
@@ -118,6 +136,8 @@ export function CarActions({ car }: { car: Car }) {
   const removeFromCompare = useCarStore((s) => s.removeFromCompare)
   
   const [mounted, setMounted] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -126,34 +146,63 @@ export function CarActions({ car }: { car: Car }) {
   const inCompare = mounted && compareList.includes(car.id)
 
   return (
-    <div className="flex flex-wrap gap-3 mb-8">
-      <motion.button
-        whileTap={{ scale: 0.95 }}
-        onClick={() => toggleFavorite(car.id)}
-        className={cn(
-          "flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all",
-          favorite ? "bg-red-500 text-white" : "glass hover:bg-secondary"
-        )}
-      >
-        <Heart className={cn("w-5 h-5", favorite && "fill-current")} />
-        {favorite ? 'Saved' : 'Save'}
-      </motion.button>
-      
-      <motion.button
-        whileTap={{ scale: 0.95 }}
-        onClick={() => inCompare ? removeFromCompare(car.id) : addToCompare(car.id)}
-        className={cn(
-          "flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all",
-          inCompare ? "bg-primary text-primary-foreground" : "glass hover:bg-secondary"
-        )}
-      >
-        {inCompare ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-        {inCompare ? 'In Compare' : 'Compare'}
-      </motion.button>
-      
-      <button className="p-3 rounded-xl glass hover:bg-secondary transition-colors">
-        <Share2 className="w-5 h-5" />
-      </button>
-    </div>
+    <>
+      <div className="flex flex-wrap gap-3 mb-8">
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => toggleFavorite(car.id)}
+          className={cn(
+            "flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all",
+            favorite ? "bg-red-500 text-white" : "glass hover:bg-secondary"
+          )}
+        >
+          <Heart className={cn("w-5 h-5", favorite && "fill-current")} />
+          {favorite ? 'Saved' : 'Save'}
+        </motion.button>
+        
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => inCompare ? removeFromCompare(car.id) : addToCompare(car.id)}
+          className={cn(
+            "flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all",
+            inCompare ? "bg-primary text-primary-foreground" : "glass hover:bg-secondary"
+          )}
+        >
+          {inCompare ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+          {inCompare ? 'In Compare' : 'Compare'}
+        </motion.button>
+        
+        <button className="p-3 rounded-xl glass hover:bg-secondary transition-colors">
+          <Share2 className="w-5 h-5" />
+        </button>
+      </div>
+    </>
   )
 }
+
+export function ReportIssueButton({ car }: { car: Car }) {
+  const [reportOpen, setReportOpen] = useState(false)
+
+  return (
+    <>
+      <motion.button
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setReportOpen(true)}
+        className="flex flex-shrink-0 items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-500 hover:bg-orange-500/20 transition-all font-medium"
+        title="Report incorrect data"
+      >
+        <Flag className="w-3.5 h-3.5" />
+        <span className="text-sm">Report Issue</span>
+      </motion.button>
+
+      <ReportErrorModal
+        carId={car.id}
+        carName={car.name}
+        isOpen={reportOpen}
+        onClose={() => setReportOpen(false)}
+      />
+    </>
+  )
+}
+
+

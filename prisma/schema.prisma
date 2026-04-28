@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // NextAuth Models
@@ -68,6 +69,7 @@ model Car {
   mileage          String?
   engine           String?
   price            Int
+  priceNote        String?
   year             Int
   drivetrain       String?
   transmission     String?
@@ -91,6 +93,7 @@ model Car {
   country          String?
   launchDate       String?
   image            String
+  cdnImage         String? // Stored fallback URL on Cloudflare R2
   rating           Float?  @default(0.0)
   
   // Legacy / Additional fields
@@ -101,10 +104,27 @@ model Car {
   specSheetUrl     String?
   officialPageUrl  String?
 
+  // Model family grouping — groups variants of the same physical car
+  modelFamily      String?               // e.g. "RAV4" groups RAV4 LE, RAV4 Prime, Vanguard, etc.
+  isCanonical      Boolean @default(false) // true = the "display" variant shown in the brand grid
+  
+  // Scoring and filtering
+  popularityScore  Float   @default(0.0)
+  platformScore    Float   @default(0.0)
+  blendedScore     Float   @default(0.0)
+  isDemoted        Boolean @default(false)
+  dateAdded        DateTime @default(now())
+
   // Relations
   images           CarGalleryImage[]
   sources          CarSource[]
   garagedBy        GarageItem[]
+  errorReports     ErrorReport[]
+  carViews         CarView[]
+  carImpressions   CarImpression[]
+
+  @@index([brand, modelFamily, isCanonical])
+  @@index([blendedScore(sort: Desc)])
 }
 
 model CarGalleryImage {
@@ -136,3 +156,55 @@ model GarageItem {
 
   @@unique([userId, carId])
 }
+
+model ErrorReport {
+  id          String   @id @default(cuid())
+  carId       String
+  category    String   // "wrong_specs", "wrong_image", "wrong_name", "other"
+  description String
+  evidence    String?  // optional URL or link to correct source
+  ipHash      String   // hashed IP for rate-limit tracking (privacy-safe)
+  status      String   @default("pending") // "pending", "reviewed", "resolved", "dismissed"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  car         Car      @relation(fields: [carId], references: [id], onDelete: Cascade)
+}
+
+// ── Behavioral Tracking Models ──────────────────────────────────────────────
+
+/// Timestamped car page views (per anonymous session) — used for trending score
+model CarView {
+  id        String   @id @default(cuid())
+  carId     String
+  sessionId String
+  viewedAt  DateTime @default(now())
+  car       Car      @relation(fields: [carId], references: [id], onDelete: Cascade)
+
+  @@index([carId, viewedAt])
+  @@index([sessionId, viewedAt])
+}
+
+/// Co-view pair counts — "users who viewed A also viewed B"
+model CarCoView {
+  id     String @id @default(cuid())
+  carAId String
+  carBId String
+  count  Int    @default(1)
+
+  @@unique([carAId, carBId])
+  @@index([carAId])
+}
+
+/// Card impressions — tracks when a car card is shown and whether it was clicked (for CTR)
+model CarImpression {
+  id          String   @id @default(cuid())
+  carId       String
+  sessionId   String
+  clicked     Boolean  @default(false)
+  impressedAt DateTime @default(now())
+  car         Car      @relation(fields: [carId], references: [id], onDelete: Cascade)
+
+  @@index([carId, impressedAt])
+}
+
