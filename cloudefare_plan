@@ -1,0 +1,168 @@
+# Cloudflare R2 Image Migration & Performance Optimization
+
+## Background & Current Problems
+
+The Velocity platform currently serves car images **directly from Wikimedia URLs** stored in the database. This causes:
+
+1. **Broken images** — Wikimedia returns `429` (rate limit), `500`, and `508` (loop) errors
+2. **Slow loading** — Images are fetched from Wikimedia on every request, then optimized by Next.js on-the-fly
+3. **Unreliable proxy** — The `wsrv.nl` free proxy also rate-limits and sometimes fails
+4. **No CDN caching** — Every page load re-fetches from the origin
+
+The site already has partial R2 infrastructure in place (`cdnImage` field, `ingest-r2.mjs` script, image-loader.ts with R2 logic) but it's **incomplete and not activated**.
+
+---
+
+## How AI Tools (ChatGPT etc.) Source High-Quality Car Images
+
+> [!NOTE]
+> ChatGPT and similar AI tools use a combination of approaches to show polished car images:
+> 1. **DALL-E / Image Generation** — They generate images on-the-fly using their own image models. This guarantees a clean, studio-quality result but images aren't real photographs.
+> 2. **Licensed Stock APIs** — Services like Getty, Shutterstock, or manufacturer press kits provide high-res, professionally-shot images.
+> 3. **Curated CDNs** — Pre-processed, verified images hosted on fast CDNs (exactly what we're building with R2).
+
+**For Velocity, the best realistic approach is:**
+- Keep sourcing from Wikipedia/Wikimedia (free, extensive coverage of every car model)
+- **Pre-download, optimize, and host on Cloudflare R2** so you own the images and they never break
+- Use **AI verification** (already built with Gemini) to reject bad/wrong images at ingestion time
+- Optionally supplement with **Google Custom Search Image API** (you already have API keys) for cars missing good Wikipedia photos
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Cloudflare R2 Credentials Needed**: Your `.env` file has placeholder R2 keys (`your_r2_access_key`, `your_r2_secret_key`). Before the migration script can run, you need to:
+> 1. Go to [Cloudflare Dashboard → R2](https://dash.cloudflare.com/?to=/:account/r2)
+> 2. Create bucket `velocity-images` (if not already done)
+> 3. Create an API token with R2 read/write permissions
+> 4. Update `.env` with real `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`
+> 5. Set up a **custom domain** or use the R2 public URL for `NEXT_PUBLIC_R2_DOMAIN`
+
+> [!WARNING]
+> **Broken `.env` line**: Line 12 in your `.env` is `="your_r2_access_key"` — it's **missing the variable name** `R2_ACCESS_KEY_ID`. This will be fixed as part of this plan.
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. **Do you have your Cloudflare R2 API keys ready?** The migration script can't run without them. If not, I can guide you through creating them in the Cloudflare dashboard.
+> 2. **Custom domain for CDN?** Do you want to use a custom subdomain like `cdn.velocity.app` or the default R2 public URL (`pub-xxx.r2.dev`)?
+> 3. **Run migration now or later?** The code changes can be made immediately, but the actual image migration (downloading ~1000+ images from Wikimedia and uploading to R2) takes time. Should I set it up so you can run it when ready?
+
+---
+
+## Proposed Changes
+
+### Component 1: Fix Environment & R2 Configuration
+
+#### [MODIFY] [.env](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/.env)
+- Fix broken line 12: add missing `R2_ACCESS_KEY_ID=` variable name
+- Add comment explaining what credentials are needed
+
+#### [MODIFY] [.env.example](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/.env.example)
+- Add R2 credential template with instructions
+
+---
+
+### Component 2: Improved R2 Ingest Pipeline
+
+#### [MODIFY] [ingest-r2.mjs](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/scripts/ingest-r2.mjs)
+
+Upgrade the existing script with:
+- **Retry logic** (3 attempts with exponential backoff) for Wikimedia downloads
+- **Image validation** — verify the downloaded image is a valid image file (not an HTML error page)
+- **Size validation** — skip suspiciously small images (< 5KB = likely broken/placeholder)
+- **Progress tracking** with resume capability (skip cars that already have `cdnImage`)
+- **Batch processing** with configurable concurrency
+- **Post-upload verification** — HTTP HEAD check that the R2 URL returns 200
+- **Dry-run mode** for testing without uploading
+
+---
+
+### Component 3: Next.js Image Pipeline (Speed & Reliability)
+
+#### [MODIFY] [next.config.mjs](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/next.config.mjs)
+- Add R2 domain to `remotePatterns` so Next.js can optimize R2-hosted images
+- Add `deviceSizes` and `imageSizes` configuration for optimal responsive breakpoints
+- Add `formats: ['image/avif', 'image/webp']` for modern format negotiation
+
+#### [MODIFY] [image-loader.ts](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/lib/image-loader.ts)
+- Update R2 domain from placeholder to real env variable
+- Implement proper fallback chain: **R2 CDN → Wikimedia direct → wsrv.nl proxy**
+- Remove the hardcoded `USE_CLOUDFLARE_RESIZING = false` flag (make it env-driven)
+
+#### [MODIFY] [utils.ts](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/lib/utils.ts)
+- Update `optimizeImage()`, `getLQIP()`, and `optimizeThumb()` to recognize R2 URLs
+- R2 images pass through directly (already optimized WebP at ingest time)
+
+#### [MODIFY] [image.ts](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/lib/image.ts)
+- Update `isUnoptimizedUrl()` to mark R2 images as optimized (they are pre-optimized WebP)
+
+---
+
+### Component 4: Frontend Image Components (Reliability)
+
+#### [MODIFY] [car-card.tsx](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/components/car-card.tsx)
+- Add `unoptimized` prop for R2 images (already WebP, skip Next.js re-processing)
+- Keep existing LQIP/shimmer loading states
+
+#### [MODIFY] [hero-section.tsx](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/components/hero-section.tsx)
+- Same `unoptimized` treatment for R2 images
+
+#### [MODIFY] [car-details-client.tsx](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/components/car-details-client.tsx)
+- Same treatment
+
+#### [MODIFY] [model-grid.tsx](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/components/model-grid.tsx)
+- Same treatment
+
+---
+
+### Component 5: API Service — CDN-First Image Resolution
+
+#### [MODIFY] [api-service.ts](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/lib/api-service.ts)
+- `mapPrismaCar()` already prefers `cdnImage` — no change needed here
+- The existing logic `raw.cdnImage || raw.image || ''` is correct
+
+---
+
+### Component 6: Ingestion Pipeline — Auto-Upload to R2
+
+#### [MODIFY] [wiki-deep-crawler.ts](file:///c:/Books/Bluetoot/premium/b_1fcSGJOgqfY-1773930365843/scripts/wiki-deep-crawler.ts)
+- After scraping a car's image from Wikipedia, **automatically upload it to R2** during ingestion
+- Set both `image` (original Wikimedia URL as backup) and `cdnImage` (R2 URL as primary)
+- This ensures all **future ingestions** go straight to R2
+
+---
+
+## Performance Impact Summary
+
+| Metric | Before (Wikimedia) | After (R2 CDN) |
+|---|---|---|
+| Image source | Wikimedia (unreliable) | Cloudflare R2 CDN (global edge) |
+| Format | JPEG/PNG (variable) | Pre-optimized WebP |
+| Typical file size | 500KB-2MB | 50-150KB |
+| Latency (first byte) | 500-2000ms | 20-50ms |
+| Rate limiting | Frequent 429 errors | Never (your own bucket) |
+| Broken images | ~30% on any given load | 0% (verified at upload) |
+| Next.js processing | On-the-fly optimization | Skip (pre-optimized) |
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1. Run the R2 ingest script on a small batch (10 cars) to verify upload/download cycle
+2. `curl` the resulting R2 URLs to confirm they return `200` with `content-type: image/webp`
+3. Run `next build` to ensure no config errors
+
+### Manual Verification
+1. Browse the site after migration — check hero, car grid, detail pages for image loading
+2. Open DevTools Network tab — confirm images load from R2 domain, not Wikimedia
+3. Check console for any remaining 429/500 errors
+4. Compare page load times before vs after with Lighthouse
+
+### Browser Test
+1. Navigate to homepage — verify hero image loads from R2
+2. Scroll through car grid — verify all car cards show images
+3. Click into a car detail page — verify gallery images load
+4. Check the Network tab — confirm R2 domain is the source

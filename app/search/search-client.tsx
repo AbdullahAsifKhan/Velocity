@@ -14,10 +14,10 @@ interface SearchClientProps {
 
 export function SearchClient({ cars, query }: SearchClientProps) {
   return (
-    <main className="min-h-screen bg-background pt-28 pb-32">
+    <main className="min-h-screen bg-background pt-24 pb-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-10">
+        <div className="mb-6">
           <Link
             href="/"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"

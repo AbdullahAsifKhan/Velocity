@@ -67,7 +67,7 @@ export function CategoryTabs() {
                 <motion.div
                   layoutId="activeTab"
                   className="absolute inset-0 bg-primary rounded-xl"
-                  transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", bounce: 0.2, duration: 0.6 }}
+                  transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", bounce: 0.15, duration: 0.5 }}
                 />
               )}
               <Icon className={cn("relative z-10 w-4 h-4", isActive && "text-primary-foreground")} />

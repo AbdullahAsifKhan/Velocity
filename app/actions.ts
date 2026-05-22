@@ -15,9 +15,9 @@ export async function loadMoreCars(
 
 export async function fetchCarsByIds(ids: string[]) {
   if (!ids || ids.length === 0) return []
+  const limitedIds = ids.slice(0, 50)
   const cars = await prisma.car.findMany({
-    where: { id: { in: ids } }
+    where: { id: { in: limitedIds } },
   })
   return cars.map(mapPrismaCar) as Partial<Car>[]
 }
-

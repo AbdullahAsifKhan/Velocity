@@ -3,17 +3,31 @@
 import { useState, useEffect, useRef, memo, useCallback } from 'react'
 import { Heart, Plus, Zap, Fuel, Gauge, Check, Car as CarIcon } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useCarStore } from '@/lib/store'
-import { cn, estimatePerformance, estimatePrice, optimizeImage, cleanCarName } from '@/lib/utils'
+import { cn, estimatePerformance, estimatePrice, optimizeImage, cleanCarName, getLQIP } from '@/lib/utils'
 import type { Car } from '@/lib/types'
 
 // ── Batched impression tracker (module-level singleton) ──────────────────────
 let _impressionBatch: string[] = []
 let _impressionTimer: ReturnType<typeof setTimeout> | null = null
 
+// Keep track of already impressed cards to avoid spamming on scroll
+let _alreadyImpressed = new Set<string>()
+let _dedupClearTimer: ReturnType<typeof setInterval> | null = null
+
 function queueImpression(carId: string, sessionId: string) {
-  if (_impressionBatch.includes(carId)) return
-  _impressionBatch.push(carId)
+  if (_alreadyImpressed.has(carId)) return
+  _alreadyImpressed.add(carId)
+  
+  if (!_dedupClearTimer && typeof window !== 'undefined') {
+    // Clear deduplication cache every 30 seconds to allow re-recording for returning visitors
+    _dedupClearTimer = setInterval(() => _alreadyImpressed.clear(), 30000)
+  }
+
+  if (!_impressionBatch.includes(carId)) {
+    _impressionBatch.push(carId)
+  }
 
   if (_impressionTimer) clearTimeout(_impressionTimer)
   _impressionTimer = setTimeout(() => {
@@ -51,11 +65,35 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
   const removeFromCompare = useCarStore((s) => s.removeFromCompare)
   const sessionId = useCarStore((s) => s.sessionId)
 
-  const [imgError, setImgError] = useState(false)
+  const [imgFallbackIdx, setImgFallbackIdx] = useState(0)
+  const [imgFailed, setImgFailed] = useState(false)
+  const [imgLoaded, setImgLoaded] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
+  // Build image candidates: primary image first, then gallery images (deduped)
+  const imageCandidates = (() => {
+    const candidates: string[] = []
+    if (car.image) candidates.push(car.image)
+    if (car.gallery && car.gallery.length > 0) {
+      for (const url of car.gallery) {
+        if (url && !candidates.includes(url)) candidates.push(url)
+      }
+    }
+    return candidates
+  })()
+
   const handleImageError = useCallback(() => {
-    setImgError(true)
+    // Try next candidate image before giving up
+    if (imgFallbackIdx < imageCandidates.length - 1) {
+      setImgFallbackIdx(prev => prev + 1)
+      setImgLoaded(false)
+    } else {
+      setImgFailed(true)
+    }
+  }, [imgFallbackIdx, imageCandidates.length])
+
+  const handleImageLoad = useCallback(() => {
+    setImgLoaded(true)
   }, [])
 
   // ── Impression tracking via IntersectionObserver ───────────────────────────
@@ -88,15 +126,19 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
   const hasRealHp = car.horsepower != null && car.horsepower > 0
   const hasRealAccel = car.acceleration != null && car.acceleration > 0
   
-  const displayImage = car.image || null
+  const displayImage = imageCandidates.length > 0 ? imageCandidates[imgFallbackIdx] : null
+  const lqip = getLQIP(displayImage)
 
   return (
     <div
       ref={cardRef}
-      className="group relative animate-fade-in-up"
-      style={{ animationDelay: `${(index % 8) * 50}ms` }}
+      className="group relative card-contain animate-fade-in-up"
+      style={{ animationDelay: `${(index % 8) * 40}ms` }}
     >
-      <div className={cn("relative overflow-hidden rounded-2xl bg-card border border-border/60 hover:border-primary/40", !disableHoverLift && "hover-lift")}>
+      <div className={cn(
+        "relative overflow-hidden rounded-2xl bg-card border border-border/60 hover:border-primary/40 transition-all duration-500",
+        !disableHoverLift && "hover-lift"
+      )}>
         {/* Image Container */}
         <Link 
           href={`/car/${car.id}`}
@@ -104,16 +146,32 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
           onClick={handleCardClick}
           className="relative aspect-[4/3] overflow-hidden bg-secondary block"
         >
-          {displayImage && !imgError ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={displayImage}
-              alt={car.name || 'Car'}
-              loading={index < 4 ? 'eager' : 'lazy'}
-              referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-              onError={handleImageError}
-            />
+          {displayImage && !imgFailed ? (
+            <>
+              {/* LQIP blurred background — shows instantly */}
+              {lqip && !imgLoaded && (
+                <div
+                  className={cn("absolute inset-0 lqip-bg z-[1]", imgLoaded && "hidden-lqip")}
+                  style={{ backgroundImage: `url(${lqip})` }}
+                />
+              )}
+              {/* Direct Browser Image Fetching to avoid Server Rate Limits */}
+              <Image
+                src={displayImage}
+                alt={car.name || 'Car'}
+                fill
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                priority={index < 4}
+                unoptimized={true}
+                className={cn(
+                  "object-cover transition-transform duration-700 ease-out group-hover:scale-105 z-[2]",
+                  "img-reveal",
+                  imgLoaded && "loaded"
+                )}
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
+            </>
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-secondary via-card to-secondary/80">
               <CarIcon className="w-12 h-12 text-muted-foreground/30" />

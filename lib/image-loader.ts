@@ -10,6 +10,9 @@ export default function myImageLoader({ src, width, quality }: { src: string, wi
     return src;
   }
   
+  // Wiki images go through wsrv.nl proxy like everything else for reliable WebP delivery.
+  // If wsrv.nl is temporarily blocked by Wikipedia, the frontend onError handler catches it.
+  
   // 2. Future-Proofing: Cloudflare Native Image Resizing 
   // If the image is coming from our R2 bucket and we enabled native resizing
   if (USE_CLOUDFLARE_RESIZING && src.includes(R2_DOMAIN)) {

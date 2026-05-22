@@ -96,11 +96,14 @@
   
   html {
     scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   
   body {
     @apply bg-background text-foreground antialiased;
     cursor: default;
+    text-rendering: optimizeLegibility;
   }
 
   /* Premium text selection */
@@ -122,6 +125,7 @@
   ::-webkit-scrollbar-thumb {
     background: oklch(0.25 0.01 250);
     border-radius: 3px;
+    transition: background 0.2s ease;
   }
   
   ::-webkit-scrollbar-thumb:hover {
@@ -162,7 +166,7 @@
   
   /* Smooth transitions */
   .transition-premium {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   }
   
   /* Hide scrollbar but keep functionality */
@@ -175,30 +179,174 @@
     display: none;
   }
 
-  /* Card hover lift — apply to interactive cards */
+  /* Card hover lift — GPU-accelerated for buttery smoothness */
   .hover-lift {
-    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-                box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform, box-shadow;
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .hover-lift:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 20px 40px oklch(0 0 0 / 0.3), 0 0 20px var(--glow);
+    transform: translateY(-8px) scale(1.015);
+    box-shadow: 0 20px 40px oklch(0 0 0 / 0.3), 0 0 24px var(--glow);
+  }
+  .hover-lift:active {
+    transform: translateY(-2px) scale(0.99);
+    transition-duration: 0.15s;
   }
 
   /* noise-overlay removed for performance — SVG feTurbulence filter was expensive */
 
-  /* Lightweight fade-in-up animation for cards — replaces Framer Motion */
+  /* Lightweight fade-in-up animation for cards — GPU-optimized */
   @keyframes fade-in-up {
     from {
       opacity: 0;
-      transform: translateY(16px);
+      transform: translateY(24px) scale(0.96);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: translateY(0) scale(1);
     }
   }
   .animate-fade-in-up {
-    animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    will-change: transform, opacity;
+    animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* ── Premium shimmer placeholder for loading images ────────────────────── */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      oklch(0.12 0.005 250) 0%,
+      oklch(0.16 0.006 250) 35%,
+      oklch(0.20 0.009 250) 50%,
+      oklch(0.16 0.006 250) 65%,
+      oklch(0.12 0.005 250) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  /* Subtle pulse for logo loading */
+  @keyframes logo-pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.6; }
+  }
+  .logo-pulse {
+    animation: logo-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* ── Image crossfade reveal — silky smooth ─────────────────────────────── */
+  .img-reveal {
+    opacity: 0;
+    will-change: opacity;
+    transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .img-reveal.loaded {
+    opacity: 1;
+  }
+
+  /* ── LQIP blur container ───────────────────────────────────────────────── */
+  .lqip-bg {
+    background-size: cover;
+    background-position: center;
+    filter: blur(20px);
+    transform: scale(1.1); /* prevent blur edge artifacts */
+    transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .lqip-bg.hidden-lqip {
+    opacity: 0;
+  }
+
+  /* ── Content visibility for off-screen performance ─────────────────────── */
+  .card-contain {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 400px;
+    contain: layout style paint;
+  }
+
+  /* ── Skeleton card shape ───────────────────────────────────────────────── */
+  .skeleton-card {
+    border-radius: 1rem;
+    overflow: hidden;
+  }
+  .skeleton-bar {
+    border-radius: 0.5rem;
+  }
+
+  /* ── Smooth interactive button/link transitions ────────────────────────── */
+  .btn-smooth {
+    will-change: transform;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                background-color 0.4s ease,
+                box-shadow 0.4s ease;
+  }
+  .btn-smooth:active {
+    transform: scale(0.95);
+  }
+
+  /* ── cmdk (Command Palette) overrides ─────────────────────────────────── */
+  [cmdk-root] {
+    width: 100%;
+  }
+  [cmdk-list] {
+    height: var(--cmdk-list-height);
+    transition: height 0.15s ease;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  [cmdk-item] {
+    user-select: none;
+    will-change: transform, background-color;
+    transition: background-color 0.12s ease;
+  }
+  [cmdk-group-heading] {
+    padding: 0.5rem 0.75rem 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    opacity: 0.7;
+  }
+  [cmdk-input-wrapper] {
+    display: flex;
+    align-items: center;
+  }
+
+  /* ── Page transition smoothness ────────────────────────────────────────── */
+  .page-enter {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  .page-enter-active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+/* ── Respect reduced motion preference ───────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .shimmer {
+    animation: none;
+    background: oklch(0.15 0.005 250);
+  }
+  .hover-lift:hover {
+    transform: none;
+  }
+  .animate-fade-in-up {
+    animation: none;
+    opacity: 1;
   }
 }

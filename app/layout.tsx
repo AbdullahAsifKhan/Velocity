@@ -37,10 +37,19 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${outfit.variable} ${geistMono.variable} font-sans antialiased noise-overlay`}>
+      <head>
+        {/* Preconnect to external image sources for faster first-image load */}
+        <link rel="preconnect" href="https://wsrv.nl" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://wsrv.nl" />
+        <link rel="preconnect" href="https://raw.githubusercontent.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://raw.githubusercontent.com" />
+        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://images.unsplash.com" />
+      </head>
+      <body className={`${outfit.variable} ${geistMono.variable} font-sans antialiased`}>
         <Navigation />
         {children}
-        <footer className="mt-auto py-8 border-t border-border/40 text-center">
+        <footer className="mt-auto py-12 border-t border-border/40 text-center">
           <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} Velocity Automotive. All rights reserved.</p>
         </footer>
         <Analytics />

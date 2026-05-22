@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { logger } from '@/lib/logger'
 
 /**
@@ -50,8 +50,15 @@ export async function POST(request: NextRequest) {
     const revalidated: string[] = []
 
     for (const path of paths) {
-      revalidatePath(path)
-      revalidated.push(path)
+      if (path.startsWith('tag:')) {
+        const tag = path.replace('tag:', '')
+        // @ts-expect-error - Next.js types can be inconsistent
+        revalidateTag(tag)
+        revalidated.push(path)
+      } else {
+        revalidatePath(path)
+        revalidated.push(path)
+      }
     }
 
     logger.info('Cache revalidated', {

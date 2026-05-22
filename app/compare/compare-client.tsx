@@ -146,7 +146,7 @@ export function CompareClient() {
                       <Link href={`/car/${car.id}`} className="block">
                         <div className="aspect-[3/2] rounded-xl overflow-hidden mb-4">
                           <Image
-                            src={car.image}
+                            src={car.image || "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?auto=format&fit=crop&w=400&q=80"}
                             alt={car.name}
                             width={400}
                             height={250}

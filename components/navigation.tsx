@@ -51,6 +51,7 @@ export function Navigation() {
       <motion.nav
         initial={{ y: shouldReduceMotion ? 0 : -100 }}
         animate={{ y: 0 }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         className={cn(
           "fixed top-0 left-0 right-0 z-50 transition-all duration-500",
           scrolled
@@ -81,7 +82,7 @@ export function Navigation() {
                   className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors relative group"
                 >
                   {link.label}
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all group-hover:w-full" />
+                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 ease-out group-hover:w-full" />
                 </Link>
               ))}
             </div>
@@ -138,9 +139,10 @@ export function Navigation() {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             className="fixed inset-0 z-40 lg:hidden"
           >
             <div className="absolute inset-0 bg-background/95 backdrop-blur-lg pt-20">
@@ -161,7 +163,7 @@ export function Navigation() {
                       key={link.href}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 }}
+                      transition={{ delay: index * 0.06, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                     >
                       <Link
                         href={link.href}

@@ -1,0 +1,326 @@
+
+<style>
+:root { --gap: 12px; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); color: var(--color-text-primary); }
+
+.council-wrap { padding: 1rem 0; }
+.section-label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 8px; }
+
+/* Personas */
+.personas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.persona-pill { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 0.5px solid var(--color-border-secondary); cursor: pointer; font-size: 13px; transition: background .15s, border-color .15s; background: var(--color-background-primary); }
+.persona-pill:hover { background: var(--color-background-secondary); }
+.persona-pill.active { background: var(--color-background-secondary); border-color: var(--color-border-primary); }
+.persona-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* Issue nav */
+.issue-nav { display: flex; gap: 6px; margin-bottom: 1rem; flex-wrap: wrap; }
+.issue-btn { padding: 5px 14px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); background: transparent; font-size: 12px; cursor: pointer; color: var(--color-text-secondary); transition: all .15s; }
+.issue-btn:hover { border-color: var(--color-border-secondary); color: var(--color-text-primary); }
+.issue-btn.active { border-color: var(--color-border-primary); background: var(--color-background-secondary); color: var(--color-text-primary); }
+
+/* Debate card */
+.debate-card { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); overflow: hidden; margin-bottom: 1rem; }
+.debate-header { padding: 14px 16px; border-bottom: 0.5px solid var(--color-border-tertiary); }
+.debate-title { font-size: 15px; font-weight: 500; margin-bottom: 3px; }
+.debate-subtitle { font-size: 12px; color: var(--color-text-tertiary); }
+.voices { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.voice { display: flex; gap: 10px; }
+.voice-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; }
+.voice-body { flex: 1; }
+.voice-name { font-size: 11px; font-weight: 500; margin-bottom: 3px; }
+.voice-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; }
+
+/* Resolution */
+.resolution { margin: 0 16px 14px; padding: 12px 14px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border-left: 3px solid #1D9E75; }
+.res-label { font-size: 11px; color: #0F6E56; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 4px; }
+.res-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; }
+
+/* Solution architecture */
+.arch-section { margin-top: 1.5rem; }
+.arch-title { font-size: 14px; font-weight: 500; margin-bottom: 10px; }
+.taxonomy-tree { display: flex; flex-direction: column; gap: 4px; }
+.tax-row { display: flex; align-items: stretch; }
+.tax-indent { width: 20px; flex-shrink: 0; display: flex; justify-content: center; }
+.tax-line { width: 1px; background: var(--color-border-secondary); }
+.tax-branch { width: 20px; border-bottom: 1px solid var(--color-border-secondary); border-left: 1px solid var(--color-border-secondary); margin-bottom: 12px; border-radius: 0 0 0 4px; flex-shrink: 0; }
+.tax-node { flex: 1; padding: 8px 12px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); font-size: 13px; margin-bottom: 4px; }
+.tax-node .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; margin-left: 6px; }
+.tag-brand { background: #E6F1FB; color: #0C447C; }
+.tag-model { background: #EEEDFE; color: #3C3489; }
+.tag-gen { background: #E1F5EE; color: #085041; }
+.tag-variant { background: #FAEEDA; color: #633806; }
+.tag-special { background: #FAECE7; color: #712B13; }
+
+/* Image strategy */
+.img-strategy { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.img-card { padding: 10px 12px; border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); font-size: 13px; }
+.img-card-title { font-size: 12px; font-weight: 500; margin-bottom: 4px; }
+.img-card-body { font-size: 12px; color: var(--color-text-secondary); line-height: 1.5; }
+
+/* UI flow */
+.ui-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.ui-step { padding: 7px 12px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); font-size: 12px; border: 0.5px solid var(--color-border-tertiary); }
+.ui-arrow { color: var(--color-text-tertiary); font-size: 14px; }
+
+.persona-colors { blue: "#185FA5"; }
+</style>
+
+<div class="council-wrap">
+  <div class="section-label">The council</div>
+  <div class="personas" id="personas"></div>
+
+  <div class="section-label">Issues debated</div>
+  <div class="issue-nav" id="issue-nav"></div>
+
+  <div id="debate-area"></div>
+
+  <div class="arch-section" id="arch-section"></div>
+</div>
+
+<script>
+const personas = [
+  { id: "de",  name: "Data Engineer",    color: "#185FA5", bg: "#E6F1FB", text: "#0C447C" },
+  { id: "ux",  name: "UX Designer",      color: "#533AB7", bg: "#EEEDFE", text: "#3C3489" },
+  { id: "pm",  name: "Product Manager",  color: "#0F6E56", bg: "#E1F5EE", text: "#085041" },
+  { id: "ce",  name: "Car Expert",       color: "#854F0B", bg: "#FAEEDA", text: "#633806" },
+  { id: "ml",  name: "ML Engineer",      color: "#993C1D", bg: "#FAECE7", text: "#712B13" },
+];
+
+const issues = [
+  {
+    id: "classify",
+    label: "1. Classification chaos",
+    title: "How do we classify unsorted Wikipedia data?",
+    subtitle: "Raw scraped data has no consistent structure — entries might be models, trims, facelifts, or something we've never seen.",
+    voices: [
+      { persona: "de", text: "Wikipedia infoboxes are inconsistent. One article says '2018 Toyota Camry (XV70)' and another says '2021 Camry facelift'. We can't hard-code rules for every pattern." },
+      { persona: "ml", text: "We need an LLM classifier to parse the article text. It can extract: brand, base model name, generation code, year range, facelift flag, and a confidence score. Low-confidence entries go to a review queue." },
+      { persona: "ce", text: "Domain knowledge matters here. A '2021 Camry' isn't a new model — it's a mid-cycle refresh of the 2018–2024 generation. The ML model needs automotive context baked in through few-shot examples." },
+      { persona: "pm", text: "We should start with a classification schema that has an explicit 'Unknown / Edge case' bucket. Better to have a visible unknown than a confidently wrong classification." },
+    ],
+    resolution: "Use an LLM pipeline with automotive few-shot context to extract: brand, model, generation (code + year range), facelift flag (boolean), variant type (trim / powertrain / special edition / regional / rebadge), and confidence score (0–1). Anything below 0.7 confidence goes into a human review queue. The schema must support an 'Unclassified' type — never force a bad fit."
+  },
+  {
+    id: "taxonomy",
+    label: "2. The variant identity problem",
+    title: "When is it a new car vs just a trim or facelift?",
+    subtitle: "A Toyota Camry LE and Camry TRD are the same generation but wildly different. A 2021 Camry looks different but isn't a new model. Where do you draw lines?",
+    voices: [
+      { persona: "ce", text: "In the industry, the hierarchy is clear: Brand > Nameplate > Generation (platform/body) > Facelift cycle > Trim/variant. A facelift doesn't get its own 'model card' — it's an update within a generation shown as a year split." },
+      { persona: "ux", text: "From a user's perspective: they don't care about VW Golf Mk7 vs Mk7.5. They think of it as a Golf with a facelift. We should show one generation card with a 'refreshed in 2017' badge, not two separate cards." },
+      { persona: "de", text: "The trickiest case is when a manufacturer relaunches a nameplate on a totally new platform. Toyota GR86 shares a name with the 86 but is a completely different car. We need a 'generation break' flag." },
+      { persona: "ml", text: "We can detect generation breaks by checking: platform code change, chassis change, or year gap > 3 years. If any trigger, create a new generation node rather than appending to the existing one." },
+    ],
+    resolution: "Adopt a 5-level taxonomy: Brand → Model (nameplate) → Generation (platform era, e.g. 2018–2024) → Facelift flag (shown inline as '2021 refresh') → Variant (trim / powertrain). Variants are NOT shown as separate browsing cards — they live inside the generation detail page as a comparison table. Facelifts are shown as a badge on the generation card, not a split entry."
+  },
+  {
+    id: "images",
+    label: "3. The image duplication crisis",
+    title: "Nearly identical variants sharing near-identical photos — how do we not confuse users?",
+    subtitle: "A Camry LE and Camry XLE look nearly the same in a photo. Showing both side by side just confuses users.",
+    voices: [
+      { persona: "ux", text: "If two cars look the same in a photo, we're creating noise. Show ONE hero image for the generation. When the user goes into variants, use a text comparison table — not a photo grid." },
+      { persona: "ml", text: "We can use perceptual hash (pHash) to detect visually similar images. If two variant images are >85% similar, we suppress the duplicate and flag the entry. The generation gets one canonical hero image." },
+      { persona: "ce", text: "The exception is when variants genuinely look different — like a pickup truck's sport trim vs base trim, or a coupe vs sedan body style within the same nameplate. Those deserve separate images." },
+      { persona: "pm", text: "For edge cases like same image different angle — we don't use both. We pick the standard 3/4 front angle as the canonical shot. Consistency matters more than showing every available Wikipedia photo." },
+      { persona: "de", text: "We also need to handle the case where Wikipedia has no image at all, or only a very old low-res stock photo. We should show a 'No verified image' placeholder rather than a blurry wrong-year photo." },
+    ],
+    resolution: "Each generation gets exactly ONE hero image (canonical 3/4 front view). Variants do NOT get individual hero images unless they are body-style different (coupe vs sedan vs wagon). Use pHash similarity check — >85% similar = suppress duplicate, use generation hero. Color variants show color swatches only, not separate photos. If no valid image exists, display a clean 'Image not available' placeholder. Never show a photo that belongs to a different model year than the generation displayed."
+  },
+  {
+    id: "ui",
+    label: "4. Navigation overload",
+    title: "Users browse 50,000 car entries — how do we not overwhelm them?",
+    subtitle: "Flat grid of 50k cars = unusable. But too many filters = also overwhelming. What's the right progressive disclosure?",
+    voices: [
+      { persona: "ux", text: "Progressive disclosure is key. Land on Brand selection — a clean grid of logos. Pick a brand, see Models — not generations, not trims. Pick a model, see Generations as a horizontal timeline. Only then do you see variants inside a detail page." },
+      { persona: "pm", text: "The most common user intent is: 'I'm interested in a 2022 Honda Civic' or 'Show me all BMW sedans'. We need both a browse path AND a search path that lands you at the right level of the hierarchy." },
+      { persona: "ce", text: "A car enthusiast might want 'all cars with a 2JZ engine' or 'all 1990s JDM cars'. The system needs filters that cut across the hierarchy, not just within it." },
+      { persona: "ux", text: "On mobile especially — don't show all generations in one long scroll. Show the current generation first, with a 'Previous generations' collapse. Most users care about the current one." },
+      { persona: "de", text: "We need URL-based deep linking. If someone searches Google for '2018 Toyota Camry specs', they should land directly at that generation page, not the homepage." },
+    ],
+    resolution: "Four-layer progressive disclosure: (1) Brand grid → (2) Model list (cards showing current generation hero image) → (3) Generation timeline (one card per generation, showing year range and 'X trims available') → (4) Generation detail page (hero image, spec table, trim comparison, 'What changed in the facelift' section). Search bypasses layers and deep-links directly to any level. Filters work at any level. Mobile: show current gen first, collapse older ones."
+  },
+  {
+    id: "edge",
+    label: "5. Edge cases & unknowns",
+    title: "Rebadges, regional variants, EV conversions, and cars we haven't thought of",
+    subtitle: "Toyota 86 = Subaru BRZ. Chevy Silverado in USA = GMC Sierra. What about an ICE model that gains an EV sister car? What about concept cars?",
+    voices: [
+      { persona: "ce", text: "Rebadged cars are a nightmare. Toyota Supra (MkV) was co-developed with BMW Z4. VW Group shares platforms across 5 brands. You can't just deduplicate by specs — they are genuinely different products with different identities." },
+      { persona: "de", text: "Solution: allow explicit 'related models' links. The 86 page has a link to BRZ: 'This model is mechanically related to Subaru BRZ (2022)'. They stay as separate entries but are surfaced together." },
+      { persona: "ml", text: "For EV variants — the BMW i4 shares a body with the 4 Series but has a completely different platform. We classify it as a sibling model, not a variant. Same nameplate family, different powertrain platform flag." },
+      { persona: "pm", text: "Concept cars and one-offs: give them their own type ('Concept / Show car') but exclude them from normal browse by default. Power users can filter them in." },
+      { persona: "ux", text: "Regional variants (Camry sold in Japan as Aurion) should be handled with a country selector. By default, show the global/US version. Add a 'Regional variants' section on the generation page for users who want that detail." },
+    ],
+    resolution: "Add explicit model relationship types: Rebadge (mechanically identical), Platform sibling (shared platform, different identity), EV sister (same body, different platform), Regional variant (same car, different name/market). These appear as labeled cross-links on the model page, not as separate browsable entries. Concepts get their own filterable type. Regional variants controlled by a country preference setting."
+  },
+  {
+    id: "search",
+    label: "6. How users actually search",
+    title: "Do users search by name, by year, by body style, or by feeling?",
+    subtitle: "'Show me sporty cars under $40k' is as valid as 'Honda Civic Type R 2023 specs'. Both need to work.",
+    voices: [
+      { persona: "pm", text: "We have two completely different user types: researchers who know exactly what they want, and browsers who are exploring. The search bar must serve both. Autocomplete should suggest model names for researchers." },
+      { persona: "ux", text: "For browsers, faceted filters are better than a search box. Body style, price range, year, country of origin, drivetrain. But don't show all filters upfront — they're overwhelming. Progressive filter reveal." },
+      { persona: "ml", text: "Semantic search helps for natural language queries like 'reliable family sedan from the 2000s'. We can embed all car descriptions and do vector similarity search. This catches queries that exact-match search would miss entirely." },
+      { persona: "de", text: "The most important filter is year range — it's how humans think about cars. 'Classic', '2000s', 'modern'. Pre-bin the years into eras in the UI, but keep actual year data precise in the backend." },
+      { persona: "ce", text: "Add a quick filter for 'significant' cars — award winners, historically notable, performance icons. Car enthusiasts love this and it helps non-experts find interesting discoveries." },
+    ],
+    resolution: "Dual-path search: (1) Predictive search bar with hierarchy-aware autocomplete (typing 'Camry' suggests 'Toyota Camry → all generations' and 'Toyota Camry 2018–2024 8th Gen'). (2) Faceted browse with filters: body style, era, country, drivetrain, market segment, significance flag. Add semantic/natural-language search as a second mode. Filters are collapsible and save to user preferences."
+  }
+];
+
+let currentIssue = 0;
+
+function renderPersonas() {
+  const wrap = document.getElementById("personas");
+  wrap.innerHTML = personas.map(p => `
+    <div class="persona-pill" style="--pdot: ${p.color};">
+      <span class="persona-dot" style="background:${p.color}"></span>
+      <span>${p.name}</span>
+    </div>
+  `).join("");
+}
+
+function renderIssueNav() {
+  const nav = document.getElementById("issue-nav");
+  nav.innerHTML = issues.map((iss, i) => `
+    <button class="issue-btn ${i === currentIssue ? 'active' : ''}" onclick="selectIssue(${i})">${iss.label}</button>
+  `).join("");
+}
+
+function getPersona(id) { return personas.find(p => p.id === id); }
+
+function renderDebate() {
+  const iss = issues[currentIssue];
+  const area = document.getElementById("debate-area");
+  const voicesHtml = iss.voices.map(v => {
+    const p = getPersona(v.persona);
+    const initials = p.name.split(" ").map(w => w[0]).join("");
+    return `
+      <div class="voice">
+        <div class="voice-avatar" style="background:${p.bg};color:${p.text}">${initials}</div>
+        <div class="voice-body">
+          <div class="voice-name" style="color:${p.color}">${p.name}</div>
+          <div class="voice-text">${v.text}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  area.innerHTML = `
+    <div class="debate-card">
+      <div class="debate-header">
+        <div class="debate-title">${iss.title}</div>
+        <div class="debate-subtitle">${iss.subtitle}</div>
+      </div>
+      <div class="voices">${voicesHtml}</div>
+      <div class="resolution">
+        <div class="res-label">Council resolution</div>
+        <div class="res-text">${iss.resolution}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderArch() {
+  const arch = document.getElementById("arch-section");
+  arch.innerHTML = `
+    <div style="border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 16px;">
+      <div class="arch-title">Solution: the data taxonomy</div>
+      <div class="taxonomy-tree">
+        <div class="tax-row">
+          <div class="tax-node" style="background:var(--color-background-secondary)">
+            <strong>Brand</strong> <span class="tag tag-brand">Level 1</span>
+            <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:3px">e.g. Toyota, BMW, Honda</div>
+          </div>
+        </div>
+        <div class="tax-row">
+          <div class="tax-indent"><div class="tax-branch"></div></div>
+          <div class="tax-node">
+            <strong>Model / Nameplate</strong> <span class="tag tag-model">Level 2</span>
+            <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:3px">e.g. Camry — one entry per real-world nameplate</div>
+          </div>
+        </div>
+        <div class="tax-row">
+          <div class="tax-indent"><div class="tax-line"></div></div>
+          <div class="tax-indent"><div class="tax-branch"></div></div>
+          <div class="tax-node">
+            <strong>Generation</strong> <span class="tag tag-gen">Level 3</span>
+            <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:3px">e.g. 8th Gen 2018–2024 · 1 hero image · facelift shown inline as badge</div>
+          </div>
+        </div>
+        <div class="tax-row">
+          <div class="tax-indent"><div class="tax-line"></div></div>
+          <div class="tax-indent"><div class="tax-line"></div></div>
+          <div class="tax-indent"><div class="tax-branch"></div></div>
+          <div class="tax-node">
+            <strong>Variant</strong> <span class="tag tag-variant">Level 4</span>
+            <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:3px">Trim / powertrain / body style — shown as comparison table, not separate cards</div>
+          </div>
+        </div>
+        <div class="tax-row">
+          <div class="tax-indent"><div class="tax-line"></div></div>
+          <div class="tax-indent"><div class="tax-line"></div></div>
+          <div class="tax-indent"><div class="tax-line"></div></div>
+          <div class="tax-indent"><div class="tax-branch"></div></div>
+          <div class="tax-node" style="border-style:dashed;">
+            <strong>Relationships</strong> <span class="tag tag-special">Cross-links</span>
+            <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:3px">Rebadge · Platform sibling · EV sister · Regional variant — linked, not merged</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="arch-title">Image strategy</div>
+        <div class="img-strategy">
+          <div class="img-card">
+            <div class="img-card-title">One hero per generation</div>
+            <div class="img-card-body">Canonical 3/4 front view. pHash deduplication removes near-identical variants. Never show year-mismatched photos.</div>
+          </div>
+          <div class="img-card">
+            <div class="img-card-title">Body-style variants get own image</div>
+            <div class="img-card-body">Coupe, sedan, wagon of same model are genuinely different. They earn separate images inside the generation detail.</div>
+          </div>
+          <div class="img-card">
+            <div class="img-card-title">Color = swatches, not photos</div>
+            <div class="img-card-body">Color variants never get separate photos. Show a palette of available color swatches instead.</div>
+          </div>
+          <div class="img-card">
+            <div class="img-card-title">No image = clean placeholder</div>
+            <div class="img-card-body">Never use a blurry or wrong-year Wikipedia image. Show a typed placeholder: "Image not verified" with the car silhouette outline.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="arch-title">User navigation flow</div>
+        <div class="ui-flow">
+          <div class="ui-step">Brand grid</div>
+          <div class="ui-arrow">→</div>
+          <div class="ui-step">Model cards</div>
+          <div class="ui-arrow">→</div>
+          <div class="ui-step">Generation timeline</div>
+          <div class="ui-arrow">→</div>
+          <div class="ui-step">Detail + variants table</div>
+        </div>
+        <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:8px">Search deep-links to any level. Filters work across all levels. Facelift shown as inline badge — never a separate card.</div>
+      </div>
+    </div>
+  `;
+}
+
+function selectIssue(i) {
+  currentIssue = i;
+  renderIssueNav();
+  renderDebate();
+}
+
+renderPersonas();
+renderIssueNav();
+renderDebate();
+renderArch();
+</script>

@@ -4,6 +4,8 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 from typing import Any, Dict, Optional
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from ingestion.sources.specs_adapter import SpecsAdapter
 
@@ -16,8 +18,19 @@ class WikipediaScraper(SpecsAdapter):
     def __init__(self):
         super().__init__("wikipedia_scraper", "Wikipedia")
         self.session = requests.Session()
+        
+        retry_strategy = Retry(
+            total=5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
+            backoff_factor=2
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        
         self.session.headers.update({
-            "User-Agent": "VelocityCarShowcase/1.0 (educational project)"
+            "User-Agent": "VelocityBot/1.0 (https://github.com/Alanwalker372/Velocity) python-requests"
         })
 
     # ── helpers ───────────────────────────────────────────────────────────────
@@ -57,6 +70,9 @@ class WikipediaScraper(SpecsAdapter):
     def fetch_specs(self, brand: str, model: str, year: int) -> Optional[Dict[str, Any]]:
         search_query = f"{brand} {model} car"
 
+        # Polite delay BEFORE the request to prevent flooding when 429s occur
+        time.sleep(1.5)
+
         # 1. Wikipedia search API
         try:
             resp = self.session.get(
@@ -78,9 +94,6 @@ class WikipediaScraper(SpecsAdapter):
             return None
 
         page_url = f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"
-
-        # Polite delay
-        time.sleep(0.5)
 
         # 2. Fetch the Wikipedia article
         try:

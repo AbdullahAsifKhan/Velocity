@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/api-service'
+import { prisma, mapPrismaCar } from '@/lib/api-service'
 import { logger } from '@/lib/logger'
 
 export async function GET(request: Request) {
@@ -35,7 +35,9 @@ export async function GET(request: Request) {
       }
     })
 
-    return NextResponse.json(cars, {
+    const mappedCars = cars.map(mapPrismaCar)
+
+    return NextResponse.json(mappedCars, {
       headers: {
         'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
       },

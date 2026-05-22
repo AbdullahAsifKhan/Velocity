@@ -12,6 +12,11 @@ import { logger } from '@/lib/logger'
  * 
  * All events are fire-and-forget from the client — no blocking on response.
  */
+
+// Simple in-memory rate limiter per session
+const sessionCounts = new Map<string, { count: number, resetAt: number }>()
+const MAX_REQUESTS_PER_MINUTE = 100
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -21,11 +26,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing event or sessionId' }, { status: 400 })
     }
 
+    const now = Date.now()
+    const sessionData = sessionCounts.get(sessionId) || { count: 0, resetAt: now + 60000 }
+    
+    if (now > sessionData.resetAt) {
+      sessionData.count = 1
+      sessionData.resetAt = now + 60000
+    } else {
+      sessionData.count++
+    }
+    
+    sessionCounts.set(sessionId, sessionData)
+
+    if (sessionData.count > MAX_REQUESTS_PER_MINUTE) {
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+    }
+
     switch (event) {
       case 'view': {
         const { carId, viewedCarIds } = body
         if (!carId) {
           return NextResponse.json({ error: 'Missing carId' }, { status: 400 })
+        }
+
+        const carExists = await prisma.car.findUnique({
+          where: { id: carId },
+          select: { id: true }
+        })
+        if (!carExists) {
+          return NextResponse.json({ error: 'Car not found' }, { status: 404 })
         }
 
         // 1. Record the page view

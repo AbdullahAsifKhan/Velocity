@@ -21,14 +21,36 @@ export function cleanCarName(name: string, brand?: string): string {
 
 export function optimizeImage(url: string | undefined | null, width = 400) {
   if (!url) return null;
-  // Local or SVG URLs pass through unchanged
+  return url;
+}
+
+/**
+ * Generate a tiny blurred Low-Quality Image Placeholder (LQIP) URL.
+ */
+export function getLQIP(url: string | undefined | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('/') || url.includes('.svg')) return null;
+  if (url.includes('images.unsplash.com')) {
+    return url.includes('?') 
+      ? `${url}&w=20&q=10&blur=20` 
+      : `${url}?w=20&q=10&blur=20`;
+  }
+  // Remove wsrv.nl - native Next.js Image placeholder="blur" handles this better natively, or we skip LQIP for raw links
+  return null;
+}
+
+/**
+ * Generate an optimized thumbnail URL at a specific width.
+ */
+export function optimizeThumb(url: string | undefined | null, width = 112) {
+  if (!url) return null;
   if (url.startsWith('/') || url.includes('.svg')) return url;
-  // Unsplash has its own CDN optimization
-  if (url.includes('images.unsplash.com')) return url;
-  // Wikipedia/Wikimedia block caching proxies like wsrv.nl
-  if (url.includes('wikimedia.org') || url.includes('wikipedia.org')) return url;
-  // Proxy all other external images through wsrv.nl for reliable, optimized loading
-  return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${width}&q=75&output=webp`;
+  if (url.includes('images.unsplash.com')) {
+    return url.includes('?') 
+      ? `${url}&w=${width}&q=60` 
+      : `${url}?w=${width}&q=60`;
+  }
+  return url;
 }
 
 export function estimatePerformance(car: Partial<Car>) {

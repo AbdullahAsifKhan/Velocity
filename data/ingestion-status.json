@@ -1,7 +1,9 @@
 {
   "ok": true,
-  "processedSeeds": 5,
-  "totalSeeds": 5,
+  "totalCars": 2755,
+  "specsEnriched": 0,
+  "imagesEnriched": 0,
+  "wikiEnriched": 1000,
   "errors": [],
-  "generatedAt": "2026-04-03T13:46:19Z"
+  "generatedAt": "2026-05-02T21:10:35Z"
 }

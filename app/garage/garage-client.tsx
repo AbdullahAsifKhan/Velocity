@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Warehouse, Plus, Trash2, ChevronRight, X, FolderPlus, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { CompareBar } from '@/components/compare-bar'
 import type { Car } from '@/lib/types'
 import { useCarStore } from '@/lib/store'
@@ -179,14 +180,14 @@ export function GarageClient() {
                         {collectionCars.slice(0, 3).map((car) => (
                             <div
                             key={car.id}
-                            className="w-10 h-10 rounded-lg overflow-hidden border-2 border-card"
+                            className="w-10 h-10 relative rounded-lg overflow-hidden border-2 border-card"
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={car.image || ''}
+                            <Image
+                              src={car.image || '/fallback.png'}
                               alt={cleanCarName(car.name, car.brand)}
-                              referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover"
+                              fill
+                              sizes="40px"
+                              className="object-cover"
                             />
                           </div>
                         ))}
@@ -222,13 +223,13 @@ export function GarageClient() {
                                     href={`/car/${car.id}`}
                                     className="flex items-center gap-4 flex-1"
                                   >
-                                    <div className="w-16 h-12 rounded-lg overflow-hidden flex-shrink-0">
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={car.image || ''}
+                                    <div className="w-16 h-12 relative rounded-lg overflow-hidden flex-shrink-0">
+                                      <Image
+                                        src={car.image || '/fallback.png'}
                                         alt={cleanCarName(car.name, car.brand)}
-                                        referrerPolicy="no-referrer"
-                                        className="w-full h-full object-cover"
+                                        fill
+                                        sizes="64px"
+                                        className="object-cover"
                                       />
                                     </div>
                                     <div className="min-w-0">

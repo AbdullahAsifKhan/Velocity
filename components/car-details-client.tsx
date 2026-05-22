@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2, AlertTriangle, Car as CarIcon, Flag } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2, AlertTriangle, Car as CarIcon, Flag, Star } from 'lucide-react'
 import { useCarStore } from '@/lib/store'
 import type { Car } from '@/lib/types'
 import { cn, optimizeImage } from '@/lib/utils'
 import { ReportErrorModal } from './report-error-modal'
+import Image from 'next/image'
 
 export function CarGallery({ car }: { car: Car }) {
   const [selectedImage, setSelectedImage] = useState(0)
@@ -23,6 +24,9 @@ export function CarGallery({ car }: { car: Car }) {
     // Record in local session state
     addViewedCar(car.id, car.type || 'Unknown', car.brand || 'Unknown')
 
+    // Get the updated list of viewed car IDs *after* the update
+    const currentViewedCarIds = useCarStore.getState().viewedCarIds
+
     // Fire tracking event (fire-and-forget)
     fetch('/api/track', {
       method: 'POST',
@@ -31,19 +35,35 @@ export function CarGallery({ car }: { car: Car }) {
         event: 'view',
         carId: car.id,
         sessionId,
-        viewedCarIds: viewedCarIds.slice(-10),
+        viewedCarIds: currentViewedCarIds.slice(-10),
       }),
     }).catch(() => {}) // silently ignore failures
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [car?.id])
+  }, [car?.id, sessionId])
 
   const gallery = car.gallery && car.gallery.length > 0 ? car.gallery : (car.image ? [car.image] : [])
   const currentSrc = gallery[selectedImage] || null
   const hasError = imgErrors.has(selectedImage)
 
   const handleImageError = useCallback((index: number) => {
-    setImgErrors(prev => new Set(prev).add(index))
-  }, [])
+    setImgErrors(prev => {
+      const nextErrors = new Set(prev)
+      nextErrors.add(index)
+      
+      if (selectedImage === index && gallery.length > 1) {
+        let nextIndex = (index + 1) % gallery.length
+        let attempts = 0
+        while (nextErrors.has(nextIndex) && attempts < gallery.length) {
+          nextIndex = (nextIndex + 1) % gallery.length
+          attempts++
+        }
+        if (attempts < gallery.length) {
+          setSelectedImage(nextIndex)
+        }
+      }
+      return nextErrors
+    })
+  }, [selectedImage, gallery.length])
   
   return (
     <div className="space-y-4">
@@ -51,10 +71,10 @@ export function CarGallery({ car }: { car: Car }) {
         <AnimatePresence mode="wait">
           <motion.div
             key={selectedImage}
-            initial={{ opacity: 0, scale: 1.05 }}
+            initial={{ opacity: 0, scale: 1.02 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             className="absolute inset-0"
           >
             {hasError || !currentSrc ? (
@@ -63,14 +83,33 @@ export function CarGallery({ car }: { car: Car }) {
                 <span className="text-sm text-muted-foreground/60 font-medium">{car.brand} {car.name}</span>
               </div>
             ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={currentSrc || ''}
-                alt={car.name}
-                referrerPolicy="no-referrer"
-                className="absolute inset-0 w-full h-full object-cover"
-                onError={() => handleImageError(selectedImage)}
-              />
+              <>
+                <Image
+                  src={currentSrc as string}
+                  alt={car.name}
+                  fill
+                  priority
+                  sizes="(max-width: 1024px) 100vw, 50vw"
+                  unoptimized={true}
+                  referrerPolicy="no-referrer"
+                  className="object-cover"
+                  onError={() => handleImageError(selectedImage)}
+                />
+                {/* Google API Badge */}
+                {car.images?.find((img: any) => img.url === currentSrc && img.source === 'google_images') && (
+                  <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-blue-500/20 backdrop-blur-xl border border-blue-500/30 text-xs text-blue-100 font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg z-10">
+                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                    Verified Photo
+                  </div>
+                )}
+                {/* Shared Image Badge */}
+                {car.images?.find((img: any) => img.url === currentSrc && img.isSharedImage) && (
+                  <div className="absolute top-4 right-4 px-3 py-1.5 rounded-full bg-orange-500/20 backdrop-blur-xl border border-orange-500/30 text-xs text-orange-100 font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg z-10" title="This is a representative photo for this model generation, as no variant-specific photo was available.">
+                    <span className="text-base leading-none">🖼️📎</span>
+                    Generic Generation Photo
+                  </div>
+                )}
+              </>
             )}
           </motion.div>
         </AnimatePresence>
@@ -111,12 +150,14 @@ export function CarGallery({ car }: { car: Car }) {
                   <CarIcon className="w-6 h-6 text-muted-foreground/40" />
                 </div>
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={img || ''}
+                <Image
+                  src={img as string}
                   alt={`${car.name} view ${index + 1}`}
+                  fill
+                  sizes="128px"
+                  unoptimized={true}
                   referrerPolicy="no-referrer"
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="object-cover"
                   onError={() => handleImageError(index)}
                 />
               )}
@@ -136,7 +177,6 @@ export function CarActions({ car }: { car: Car }) {
   const removeFromCompare = useCarStore((s) => s.removeFromCompare)
   
   const [mounted, setMounted] = useState(false)
-  const [reportOpen, setReportOpen] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -205,4 +245,55 @@ export function ReportIssueButton({ car }: { car: Car }) {
   )
 }
 
+export function CarRating({ carId, initialRating }: { carId: string, initialRating: number }) {
+  const [rating, setRating] = useState(initialRating)
+  const [hoverRating, setHoverRating] = useState(0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const handleRate = async (value: number) => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    try {
+      const res = await fetch(`/api/cars/${carId}/rate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating: value }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setRating(data.rating)
+      }
+    } catch (error) {
+      console.error('Failed to rate:', error)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end">
+      <span className="text-sm text-muted-foreground mb-1">User Rating</span>
+      <div 
+        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20 cursor-pointer transition-colors hover:bg-accent/20"
+        onMouseLeave={() => setHoverRating(0)}
+      >
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={star}
+            className={cn(
+              "w-4 h-4 transition-colors duration-200",
+              (hoverRating ? star <= hoverRating : star <= Math.round(rating)) 
+                ? "fill-accent text-accent" 
+                : "text-muted-foreground/30"
+            )}
+            onMouseEnter={() => setHoverRating(star)}
+            onClick={() => handleRate(star)}
+          />
+        ))}
+        <span className="font-semibold text-accent ml-1 min-w-[24px] text-center">
+          {rating > 0 ? rating.toFixed(1) : '—'}
+        </span>
+      </div>
+    </div>
+  )
+}

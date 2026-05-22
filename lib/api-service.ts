@@ -1,7 +1,10 @@
 import { PrismaClient } from '@prisma/client'
+import { unstable_cache } from 'next/cache'
 import { logger } from './logger'
 import type { Car } from './types'
+import { BRAND_SEGMENTS, CATEGORY_TABS, getSegmentsForBrand } from './constants'
 import { TAXONOMY_OVERRIDES, GENERATION_YEAR_OVERRIDES } from './taxonomy-overrides'
+import { FLAGSHIP_MODELS } from './flagship-models'
 
 
 const globalForPrisma = globalThis as unknown as {
@@ -15,6 +18,7 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 const CAR_LIST_SELECT = {
   id: true,
   name: true,
+  cleanName: true,
   brand: true,
   type: true,
   fuelType: true,
@@ -42,10 +46,36 @@ const CAR_LIST_SELECT = {
   popularityScore: true,
   blendedScore: true,
   isDemoted: true,
+  officialPageUrl: true,
+  // Council Taxonomy fields
+  generation: true,
+  generationStart: true,
+  generationEnd: true,
+  bodyStyle: true,
+  faceliftYear: true,
+  variantType: true,
+  classifyConfidence: true,
+  images: {
+    select: { url: true, source: true, priority: true, perceptualHash: true, isHeroImage: true, isSharedImage: true }
+  }
 } as const
 
 // Exploration rate: 10% of slots filled with random top-500 cars
 const EXPLORATION_RATE = 0.1
+
+/**
+ * Returns a sorting boost for flagship/popular models.
+ * Higher boost = appears earlier. Returns 0 for non-flagship models.
+ */
+function getFlagshipBoost(brand: string, modelName: string): number {
+  const flagships = FLAGSHIP_MODELS[brand]
+  if (!flagships) return 0
+  const lowerModel = modelName.toLowerCase()
+  const idx = flagships.findIndex(f => lowerModel.includes(f.toLowerCase()))
+  if (idx === -1) return 0
+  // Higher boost for earlier items in the list (more iconic/popular)
+  return 1000 - (idx * 10)
+}
 
 // Types we hide from the main showcase UI
 const HIDDEN_TYPES = ['Motorcycle', 'Commercial']
@@ -62,6 +92,13 @@ const ENGINE_IMAGE_KEYWORDS = [
   'suspension', 'brake', 'caliper', 'rotor',
   'dashboard', 'cockpit', 'interior', 'steering',
   'assembly.line', 'factory', 'plant',
+  // People / face detection — remove images with humans prominently
+  'portrait', 'headshot', 'person', 'people', 'driver',
+  'founder', 'designer', 'engineer', 'ceo', 'chairman',
+  'executive', 'team', 'staff', 'employee', 'worker',
+  'award', 'ceremony', 'handshake', 'podium', 'trophy',
+  'crowd', 'audience', 'spectator', 'fan',
+  'press.conference', 'interview', 'speech', 'signing',
 ]
 
 const ENGINE_IMAGE_REGEX = new RegExp(
@@ -87,24 +124,92 @@ function isLikelyNonCarImage(url: string | null | undefined): boolean {
   }
 }
 
+// Helper to normalize URL for comparison (strip http(s):// and query params)
+export function normalizeImageUrl(u: string) {
+  if (!u) return ''
+  try {
+    let decoded = decodeURIComponent(u)
+    
+    // Normalize Wikimedia Commons thumbnails to their original path
+    if (decoded.includes('upload.wikimedia.org') && decoded.includes('/thumb/')) {
+      const parts = decoded.split('/')
+      if (/^\d+px-/.test(parts[parts.length - 1])) {
+        parts.pop()
+      }
+      decoded = parts.join('/').replace('/thumb/', '/')
+    }
+
+    // Fast domain+path extraction without slow URL parsing
+    return decoded.replace(/^https?:\/\//, '').split('?')[0].toLowerCase()
+  } catch {
+    return u.replace(/^https?:\/\//, '').split('?')[0].toLowerCase()
+  }
+}
+
 // Map a Prisma Car row (+ relations) to our frontend Car type
 export function mapPrismaCar(raw: any): Car {
-  // Determine best image: CDN first, then original, but reject engine/non-car images
-  let resolvedImage = raw.cdnImage || raw.image || ''
-  if (isLikelyNonCarImage(resolvedImage)) {
-    // CDN image was bad — try original
-    if (raw.cdnImage && isLikelyNonCarImage(raw.cdnImage) && raw.image && !isLikelyNonCarImage(raw.image)) {
-      resolvedImage = raw.image
-    } else {
-      resolvedImage = '' // fall back to placeholder
+  // Sort gallery images by priority (lower = better quality)
+  const sortedGallery: any[] = (raw.images ?? [])
+    .filter((img: any) => img.url && !isLikelyNonCarImage(img.url))
+    .sort((a: any, b: any) => (a.priority ?? 50) - (b.priority ?? 50))
+
+  // Pick the best image: gallery (priority-sorted) → CDN → original field → empty
+  let resolvedImage = ''
+  if (sortedGallery.length > 0) {
+    resolvedImage = sortedGallery[0].url
+  } else {
+    resolvedImage = raw.cdnImage || raw.image || ''
+    if (isLikelyNonCarImage(resolvedImage)) {
+      if (raw.cdnImage && isLikelyNonCarImage(raw.cdnImage) && raw.image && !isLikelyNonCarImage(raw.image)) {
+        resolvedImage = raw.image
+      } else {
+        resolvedImage = ''
+      }
+    }
+  }
+
+  // Build gallery array: best image first, then remaining gallery, then original image
+  const galleryUrls: string[] = []
+  const seenUrls = new Set<string>()
+
+  for (const img of sortedGallery) {
+    if (!img.url) continue
+    const norm = normalizeImageUrl(img.url)
+    if (!seenUrls.has(norm)) {
+      seenUrls.add(norm)
+      galleryUrls.push(img.url)
+    }
+  }
+
+  // Add the original image field if it's not already in the gallery
+  const originalImage = raw.cdnImage || raw.image || ''
+  if (originalImage && !isLikelyNonCarImage(originalImage)) {
+    const norm = normalizeImageUrl(originalImage)
+    if (!seenUrls.has(norm)) {
+      seenUrls.add(norm)
+      galleryUrls.push(originalImage)
+    }
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[mapPrismaCar] ${raw.id} gallery size: ${galleryUrls.length}`, galleryUrls)
+  }
+
+  // Remap 'Discontinued' for exotic/premium cars
+  let priceNote = raw.priceNote
+  if (priceNote && priceNote.toLowerCase().includes('discontinued')) {
+    const premiumBrands = ['Ferrari', 'Lamborghini', 'McLaren', 'Koenigsegg', 'Bugatti', 'Pagani', 'Aston Martin', 'Rolls-Royce']
+    if (premiumBrands.includes(raw.brand) || raw.type === 'Hypercar' || raw.type === 'Supercar' || (raw.price && raw.price > 150000)) {
+      priceNote = 'Limited Edition'
     }
   }
 
   return {
     ...raw,
+    priceNote,
     image: resolvedImage,
-    // flatten gallery images relation to the url-string array the old UI used
-    gallery: raw.images?.map((img: any) => img.url) ?? [],
+    images: sortedGallery, // Ensure full objects are passed to UI
+    gallery: galleryUrls,
+    officialPageUrl: raw.officialPageUrl,
     // rename sources relation fields to match the UI's expectations
     sources: raw.sources?.map((s: any) => ({
       id: s.id,
@@ -120,10 +225,10 @@ export function mapPrismaCar(raw: any): Car {
 
 // ── Brand-diversity interleaving ─────────────────────────────────────────────
 /**
- * Deduplicate cars that share the exact same image within the same brand.
+ * Deduplicate cars that share the exact same wiki page or image within the same brand.
  * This prevents e.g. 5 'Porsche 718' variants with the identical Wikipedia photo showing.
  */
-function deduplicateByImage<T extends { brand?: string; image?: string | null }>(cars: T[]): T[] {
+function deduplicateByImage<T extends { brand?: string; image?: string | null; officialPageUrl?: string | null }>(cars: T[]): T[] {
   const result: T[] = []
   const seen = new Set<string>()
 
@@ -134,11 +239,70 @@ function deduplicateByImage<T extends { brand?: string; image?: string | null }>
       continue
     }
 
-    // Unique key: Brand + Image URL (preferring CDN if available)
-    const activeImage = (car as any).cdnImage || car.image;
-    const key = `${car.brand || 'Unknown'}-${activeImage}`
+    let key = ''
+    if (car.officialPageUrl) {
+      key = `wiki-${car.officialPageUrl}`
+    } else {
+      // Unique key: Brand + Image URL (preferring CDN if available)
+      const activeImage = (car as any).cdnImage || car.image;
+      key = `img-${car.brand || 'Unknown'}-${normalizeImageUrl(activeImage)}`
+    }
+
     if (!seen.has(key)) {
       seen.add(key)
+      result.push(car)
+    }
+  }
+
+  return result
+}
+
+/**
+ * Assign distinct display images to cars in a list when possible.
+ * If Car A and Car B share an image, but Car B has alternatives in its gallery,
+ * we switch Car B to use an alternative to maximize visual diversity.
+ */
+function diversifyCarImages<T extends { image?: string | null; gallery?: string[] }>(cars: T[]): T[] {
+  const usedImages = new Set<string>()
+  const result: T[] = []
+
+  // Pass 1: Reserve images for cars that have no alternatives
+  for (const car of cars) {
+    const gallery = car.gallery || []
+    if (gallery.length <= 1 && car.image) {
+      usedImages.add(normalizeImageUrl(car.image))
+    }
+  }
+
+  // Pass 2: Reassign images for cars that have alternatives
+  for (const car of cars) {
+    const gallery = car.gallery || []
+    let newImage = car.image
+
+    if (gallery.length > 1) {
+      let assigned = false
+      // Find first unused image in gallery
+      for (const imgUrl of gallery) {
+        const norm = normalizeImageUrl(imgUrl)
+        if (!usedImages.has(norm)) {
+          newImage = imgUrl
+          usedImages.add(norm)
+          assigned = true
+          break
+        }
+      }
+      
+      // Fallback if all images are already used
+      if (!assigned && newImage) {
+        usedImages.add(normalizeImageUrl(newImage))
+      }
+    } else if (newImage) {
+      usedImages.add(normalizeImageUrl(newImage))
+    }
+
+    if (newImage !== car.image) {
+      result.push({ ...car, image: newImage })
+    } else {
       result.push(car)
     }
   }
@@ -150,9 +314,12 @@ function deduplicateByImage<T extends { brand?: string; image?: string | null }>
  * Round-robin interleave cars from different brands so no single brand
  * dominates any page of results.
  */
-function interleaveByBrand<T extends { brand: string; image?: string | null }>(cars: T[]): T[] {
-  // First, remove visually identical cars within the same brand
-  const visuallyUnique = deduplicateByImage(cars)
+function interleaveByBrand<T extends { brand: string; image?: string | null; gallery?: string[]; officialPageUrl?: string | null }>(cars: T[]): T[] {
+  // First, diversify images so cars with alternatives don't get wrongly deduplicated
+  const diverse = diversifyCarImages(cars)
+
+  // Then, remove visually identical cars within the same brand (or same wiki page)
+  const visuallyUnique = deduplicateByImage(diverse)
 
   // Group by brand
   const buckets = new Map<string, T[]>()
@@ -204,7 +371,7 @@ interface FetchCarsOptions {
   sessionContext?: SessionContext  // for personalized biasing
 }
 
-export async function fetchCarsList(options: FetchCarsOptions = {}) {
+async function _fetchCarsList(options: FetchCarsOptions = {}) {
   const {
     query = '',
     type = 'All',
@@ -219,6 +386,7 @@ export async function fetchCarsList(options: FetchCarsOptions = {}) {
     const where: any = {
       isCanonical: true,
       modelFamily: { not: null },
+      image: { not: '' },
     }
 
     // Hide motorcycles/commercial and specific brands from main UI
@@ -244,7 +412,23 @@ export async function fetchCarsList(options: FetchCarsOptions = {}) {
     }
 
     if (type && type !== 'All') {
-      where.type = { ...(where.type || {}), equals: type }
+      const tabDef = CATEGORY_TABS.find(t => t.label === type)
+      if (tabDef && tabDef.filter) {
+        if ('OR' in tabDef.filter && tabDef.filter.OR) {
+          where.AND = where.AND || []
+          where.AND.push({ OR: tabDef.filter.OR })
+        } else {
+          for (const [k, v] of Object.entries(tabDef.filter)) {
+            if (k === 'type' && where.type) {
+              where.type = { ...where.type, equals: v }
+            } else {
+              where[k] = v
+            }
+          }
+        }
+      } else {
+        where.type = { ...(where.type || {}), equals: type }
+      }
     }
 
     const hasSession = sessionContext && (
@@ -252,8 +436,19 @@ export async function fetchCarsList(options: FetchCarsOptions = {}) {
       (sessionContext.segments && sessionContext.segments.length > 0)
     )
 
-    // If session context exists, fetch extra cars for re-ranking
-    const fetchLimit = hasSession ? Math.ceil(limit * 1.3) : limit
+    const isTopPages = !query && type === 'All' && !hasSession && (page * limit <= 200)
+
+    let skip = (page - 1) * limit
+    let fetchLimit = limit
+    
+    if (isTopPages) {
+      // Fetch top 200 to allow stable local shuffling across the first few pages
+      skip = 0
+      fetchLimit = 200
+    } else if (hasSession) {
+      // If session context exists, fetch extra cars for re-ranking
+      fetchLimit = Math.ceil(limit * 1.3)
+    }
 
     const [total, cars] = await Promise.all([
       prisma.car.count({ where }),
@@ -261,15 +456,47 @@ export async function fetchCarsList(options: FetchCarsOptions = {}) {
         where,
         orderBy: [{ blendedScore: 'desc' }, { popularityScore: 'desc' }, { horsepower: 'desc' }],
         select: CAR_LIST_SELECT,
-        skip: (page - 1) * limit,
+        skip,
         take: fetchLimit,
       }),
     ])
 
     let finalCars = cars
 
-    // Session-based personalization: boost cars matching user's recent interests
-    if (hasSession && cars.length > 0) {
+    if (isTopPages) {
+      const currentHour = Math.floor(Date.now() / 3600000)
+      const getHash = (str: string) => {
+        let hash = 0
+        for (let i = 0; i < str.length; i++) {
+          hash = (hash << 5) - hash + str.charCodeAt(i)
+          hash |= 0
+        }
+        return Math.min(0.999999, Math.abs(hash) / 2147483648)
+      }
+
+      const scored = cars.map(car => {
+        let sortScore = car.blendedScore || car.popularityScore || 0
+        
+        // Massive boost for HQ Google images or high-priority press images
+        const hasHQ = (car as any).images?.some((img: any) => img.source === 'google_images' || img.priority <= 20)
+        if (hasHQ) sortScore += 2.0
+
+        // Flagship model boost — iconic models surface more often
+        const flagBoost = getFlagshipBoost(car.brand, car.name)
+        if (flagBoost > 0) sortScore += (flagBoost / 1000) * 1.5
+        
+        // Add hourly-seeded deterministic noise for variety
+        const noise = getHash(`${car.id}-${currentHour}`) * 0.3
+        sortScore += noise
+
+        return { car, sortScore }
+      })
+
+      scored.sort((a, b) => b.sortScore - a.sortScore)
+      
+      // Slice the correct page segment from our stable top-200 pool
+      finalCars = scored.map(s => s.car).slice((page - 1) * limit, page * limit)
+    } else if (hasSession && cars.length > 0) {
       const sessionTypes = new Set(sessionContext!.types || [])
       const sessionSegments = new Set(sessionContext!.segments || [])
 
@@ -304,35 +531,44 @@ export async function fetchCarsList(options: FetchCarsOptions = {}) {
       finalCars = [...result, ...unboosted].slice(0, limit)
     }
 
-    // Epsilon-greedy exploration: replace ~10% of slots with random top-500 picks
+    // Epsilon-greedy exploration: replace ~10% of slots with random picks
+    // Uses lightweight count + random offset instead of fetching 500 rows
     const explorationSlots = Math.max(1, Math.floor(limit * EXPLORATION_RATE))
     if (!query && page <= 3 && finalCars.length >= limit) {
       try {
         const existingIds = new Set(finalCars.map(c => c.id))
-        const exploreCars = await prisma.car.findMany({
-          where: {
-            ...where,
-            id: { notIn: Array.from(existingIds) },
-          },
-          orderBy: [{ blendedScore: 'desc' }, { popularityScore: 'desc' }],
-          select: CAR_LIST_SELECT,
-          take: 500,
-        })
+        const exploreWhere = {
+          ...where,
+          id: { notIn: Array.from(existingIds) },
+        }
+        const exploreCount = await prisma.car.count({ where: exploreWhere })
 
-        if (exploreCars.length > 0) {
-          // Pick random cars from the pool
-          const picks: typeof exploreCars = []
-          const poolCopy = [...exploreCars]
-          for (let i = 0; i < Math.min(explorationSlots, poolCopy.length); i++) {
-            const randIdx = Math.floor(Math.random() * poolCopy.length)
-            picks.push(poolCopy.splice(randIdx, 1)[0])
+        if (exploreCount > 0) {
+          const picks: typeof cars = []
+          const usedOffsets = new Set<number>()
+          const slotsToFill = Math.min(explorationSlots, exploreCount)
+
+          for (let i = 0; i < slotsToFill; i++) {
+            let offset: number
+            do { offset = Math.floor(Math.random() * exploreCount) } while (usedOffsets.has(offset))
+            usedOffsets.add(offset)
+            const [car] = await prisma.car.findMany({
+              where: exploreWhere,
+              orderBy: { id: 'asc' },
+              select: CAR_LIST_SELECT,
+              skip: offset,
+              take: 1,
+            })
+            if (car) picks.push(car)
           }
 
-          // Replace the last N slots with exploration picks
-          finalCars = [
-            ...finalCars.slice(0, limit - picks.length),
-            ...picks,
-          ]
+          if (picks.length > 0) {
+            // Replace the last N slots with exploration picks
+            finalCars = [
+              ...finalCars.slice(0, limit - picks.length),
+              ...picks,
+            ]
+          }
         }
       } catch {
         // Exploration is best-effort — don't break the page
@@ -355,6 +591,30 @@ export async function fetchCarsList(options: FetchCarsOptions = {}) {
   }
 }
 
+/**
+ * Public fetchCarsList — cached for non-personalized requests.
+ * When sessionContext is provided, bypasses cache for fresh personalized results.
+ */
+export async function fetchCarsList(options: FetchCarsOptions = {}) {
+  const { query = '', type = 'All', page = 1, limit = 50, sessionContext } = options
+
+  // Personalized requests bypass cache (session-specific)
+  const hasSession = sessionContext && (
+    (sessionContext.types && sessionContext.types.length > 0) ||
+    (sessionContext.segments && sessionContext.segments.length > 0)
+  )
+  if (hasSession) {
+    return _fetchCarsList(options)
+  }
+
+  // Non-personalized requests are cached
+  return unstable_cache(
+    async () => _fetchCarsList(options),
+    ['cars-list', String(page), type, query, String(limit)],
+    { tags: ['cars-list'], revalidate: 60 }
+  )()
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CAR OF THE DAY (Hero section)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -363,36 +623,32 @@ export async function fetchCarsList(options: FetchCarsOptions = {}) {
  * Deterministic "Car of the Day" — picks a different car each day.
  * Only selects fully enriched cars with images, excludes motorcycles/commercial.
  */
-export async function fetchCarOfTheDay(): Promise<Partial<Car> | null> {
+async function _fetchCarOfTheDay(): Promise<Partial<Car> | null> {
   try {
     const queryWhere = {
       isCanonical: true,
       image: { not: '' },
       horsepower: { gt: 100 },
-      acceleration: { gt: 0 },
-      topSpeed: { gt: 0 },
       type: { notIn: HIDDEN_TYPES },
       brand: { notIn: HIDDEN_BRANDS },
       isDemoted: false,
+      name: { not: { contains: 'concept vehicles' } },
     };
 
-    const qualifiedCount = await prisma.car.count({
+    // Fetch the top 365 best cars based on blendedScore to ensure high quality recommendations
+    const pool = await prisma.car.findMany({
       where: queryWhere,
+      orderBy: [{ blendedScore: 'desc' }, { popularityScore: 'desc' }, { horsepower: 'desc' }],
+      take: 365,
     })
 
-    if (qualifiedCount === 0) return null
+    if (pool.length === 0) return null
 
     const daysSinceEpoch = Math.floor(Date.now() / 86_400_000)
-    const offset = daysSinceEpoch % qualifiedCount
+    // Use a large prime multiplier to shuffle the order pseudo-randomly over time
+    const index = (daysSinceEpoch * 137) % pool.length
 
-    const car = await prisma.car.findMany({
-      where: queryWhere,
-      orderBy: { id: 'asc' },
-      skip: offset,
-      take: 1,
-    })
-
-    return car.length > 0 ? (mapPrismaCar(car[0]) as Partial<Car>) : null
+    return pool.length > 0 ? (mapPrismaCar(pool[index]) as Partial<Car>) : null
   } catch (error) {
     logger.error('fetchCarOfTheDay failed', {
       path: 'lib/api-service.ts#fetchCarOfTheDay',
@@ -411,73 +667,129 @@ export async function fetchCarOfTheDay(): Promise<Partial<Car> | null> {
  * Uses blendedScore (not raw HP) to pick the most relevant cars.
  * Editorial `featured: true` flags always get priority.
  */
-export async function fetchFeaturedCars(limit = 8): Promise<Partial<Car>[]> {
+async function _fetchFeaturedCars(limit = 8): Promise<Partial<Car>[]> {
   try {
-    // Fetch a pool of high-quality candidates sorted by blendedScore
-    const pool = await prisma.car.findMany({
+    // Fetch a pool of highly reputed candidates
+    const reputedPool = await prisma.car.findMany({
       where: {
         isCanonical: true,
         image: { not: '' },
-        horsepower: { gt: 50 },
+        horsepower: { gt: 250 },
         type: { notIn: HIDDEN_TYPES },
         brand: { notIn: HIDDEN_BRANDS },
         isDemoted: false,
+        name: { not: { contains: 'concept vehicles' } },
       },
       orderBy: [{ blendedScore: 'desc' }, { popularityScore: 'desc' }, { horsepower: 'desc' }],
       select: CAR_LIST_SELECT,
-      take: 200,
+      take: 100,
     })
 
-    // Deduplicate by name (keep highest-scored variant)
-    const uniqueByName = new Map<string, typeof pool[0]>()
-    for (const car of pool) {
-      if (!uniqueByName.has(car.name)) uniqueByName.set(car.name, car)
-    }
-    const candidates = Array.from(uniqueByName.values())
-
-    // Editorial overrides first
-    const editorial = candidates.filter(c => c.featured)
-    const organic = candidates.filter(c => !c.featured)
-
-    // Brand-diverse selection
-    const brandPicked = new Map<string, number>()
-    const selectedIds: string[] = []
-
-    // Priority: editorial picks
-    for (const c of editorial) {
-      if (selectedIds.length >= limit) break
-      selectedIds.push(c.id)
-      brandPicked.set(c.brand, (brandPicked.get(c.brand) || 0) + 1)
-    }
-
-    // First pass: one per brand from organic
-    for (const c of organic) {
-      if (selectedIds.length >= limit) break
-      const count = brandPicked.get(c.brand) || 0
-      if (count === 0) {
-        selectedIds.push(c.id)
-        brandPicked.set(c.brand, 1)
-      }
-    }
-
-    // Second pass: fill remaining slots
-    for (const c of organic) {
-      if (selectedIds.length >= limit) break
-      if (!selectedIds.includes(c.id)) {
-        selectedIds.push(c.id)
-      }
-    }
-
-    const featured = await prisma.car.findMany({
-      where: { id: { in: selectedIds } },
+    // Fetch a pool of normal, everyday candidates
+    const normalPool = await prisma.car.findMany({
+      where: {
+        isCanonical: true,
+        image: { not: '' },
+        horsepower: { gt: 90, lte: 250 },
+        type: { in: ['Sedan', 'Hatchback', 'SUV', 'Wagon', 'Crossover'] },
+        brand: { notIn: HIDDEN_BRANDS },
+        isDemoted: false,
+        name: { not: { contains: 'concept vehicles' } },
+      },
+      orderBy: [{ popularityScore: 'desc' }, { blendedScore: 'desc' }],
       select: CAR_LIST_SELECT,
+      take: 100,
     })
 
-    const ordered = selectedIds
-      .map(id => featured.find(c => c.id === id))
-      .filter(Boolean) as typeof featured
+    const deduplicate = (pool: any[]) => {
+      const map = new Map();
+      for (const car of pool) {
+        if (!map.has(car.name)) map.set(car.name, car);
+      }
+      return Array.from(map.values());
+    }
 
-    return ordered.map(mapPrismaCar) as Partial<Car>[]
+    const reputedCandidates = deduplicate(reputedPool);
+    const normalCandidates = deduplicate(normalPool);
+
+    const editorial = [...reputedCandidates, ...normalCandidates].filter(c => c.featured);
+
+    // Use hourly seed so featured cars rotate every hour, not just daily
+    const currentHour = Math.floor(Date.now() / 3_600_000);
+    const seededShuffle = <T,>(array: T[], seed: number): T[] => {
+      let m = array.length, t, i;
+      const shuffled = [...array];
+      let currentSeed = seed;
+      const random = () => {
+        const x = Math.sin(currentSeed++) * 10000;
+        return x - Math.floor(x);
+      };
+      while (m) {
+        i = Math.floor(random() * m--);
+        t = shuffled[m];
+        shuffled[m] = shuffled[i];
+        shuffled[i] = t;
+      }
+      return shuffled;
+    };
+
+    const reputedOrganic = seededShuffle(reputedCandidates.filter(c => !c.featured), currentHour);
+    const normalOrganic = seededShuffle(normalCandidates.filter(c => !c.featured), currentHour);
+
+    const selected: typeof reputedPool = [];
+    const brandPicked = new Map<string, number>();
+
+    const targetNormal = Math.floor(limit * 0.4); // e.g. 3 normals if limit is 8
+    
+    // Sort organic pools so flagship models appear first within each pool
+    const sortByFlagship = (a: typeof reputedPool[0], b: typeof reputedPool[0]) => {
+      const fA = getFlagshipBoost(a.brand, a.name)
+      const fB = getFlagshipBoost(b.brand, b.name)
+      return fB - fA
+    }
+    reputedOrganic.sort(sortByFlagship)
+    normalOrganic.sort(sortByFlagship)
+
+    // Priority 1: Editorial picks
+    for (const c of editorial) {
+      if (selected.length >= limit) break;
+      if (!selected.some(s => s.id === c.id)) {
+        selected.push(c);
+        brandPicked.set(c.brand, (brandPicked.get(c.brand) || 0) + 1);
+      }
+    }
+
+    // Priority 2: Normal cars (up to targetNormal slots)
+    let normalCount = selected.filter(c => c.horsepower !== null && c.horsepower <= 250).length;
+    for (const c of normalOrganic) {
+      if (selected.length >= limit || normalCount >= targetNormal) break;
+      const count = brandPicked.get(c.brand) || 0;
+      if (count === 0 && !selected.some(s => s.id === c.id)) {
+        selected.push(c);
+        brandPicked.set(c.brand, 1);
+        normalCount++;
+      }
+    }
+
+    // Priority 3: Reputed cars
+    for (const c of reputedOrganic) {
+      if (selected.length >= limit) break;
+      const count = brandPicked.get(c.brand) || 0;
+      if (count === 0 && !selected.some(s => s.id === c.id)) {
+        selected.push(c);
+        brandPicked.set(c.brand, 1);
+      }
+    }
+
+    // Priority 4: Fill remaining slots from either pool if limit not reached, ignoring brand diversity
+    for (const c of [...reputedOrganic, ...normalOrganic]) {
+      if (selected.length >= limit) break;
+      if (!selected.some(s => s.id === c.id)) {
+        selected.push(c);
+      }
+    }
+
+    return selected.map(mapPrismaCar) as Partial<Car>[];
   } catch (error) {
     logger.error('fetchFeaturedCars failed', {
       path: 'lib/api-service.ts#fetchFeaturedCars',
@@ -496,7 +808,7 @@ export async function fetchFeaturedCars(limit = 8): Promise<Partial<Car>[]> {
  * Only shows unique models (newest year variant per model).
  * Excludes hidden types, enriched-first.
  */
-export async function fetchBrandCars(brandName: string): Promise<{
+async function _fetchBrandCars(brandName: string): Promise<{
   cars: Partial<Car>[],
   totalModels: number,
   totalVariants: number,
@@ -596,8 +908,8 @@ export async function searchCarsDeduped(query: string, limit = 8): Promise<Parti
       if (!existing) {
         uniqueModels.set(car.name, car)
       } else {
-        const existingScore = existing.popularityScore
-        const candidateScore = car.popularityScore
+        const existingScore = existing.popularityScore || 0
+        const candidateScore = car.popularityScore || 0
         if (candidateScore > existingScore) {
           uniqueModels.set(car.name, car)
         }
@@ -670,13 +982,15 @@ export async function searchCarsFullPage(query: string): Promise<Partial<Car>[]>
 // EXISTING: fetchCarById, fetchBrands, fetchBrandStats, fetchModelVariants, fetchSimilarCars
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export async function fetchCarById(id: string): Promise<Car | null> {
+async function _fetchCarById(id: string): Promise<Car | null> {
   try {
     const car = await prisma.car.findUnique({
       where: { id },
       include: {
         sources: true,
-        images: true,
+        images: {
+          orderBy: { priority: 'asc' },
+        },
       },
     })
     if (!car) return null
@@ -692,7 +1006,7 @@ export async function fetchCarById(id: string): Promise<Car | null> {
   }
 }
 
-export async function fetchBrands(): Promise<string[]> {
+async function _fetchBrands(): Promise<string[]> {
   try {
     const rows = await prisma.car.findMany({
       where: { brand: { notIn: HIDDEN_BRANDS } },
@@ -711,23 +1025,21 @@ export async function fetchBrands(): Promise<string[]> {
   }
 }
 
-export async function fetchBrandStats(): Promise<{ name: string; count: number }[]> {
+async function _fetchBrandStats(): Promise<{ name: string; count: number }[]> {
   try {
-    const rows = await prisma.car.findMany({
-      where: { brand: { notIn: HIDDEN_BRANDS } },
-      select: { brand: true, name: true },
+    // Use a single efficient groupBy with _count instead of fetching all rows
+    const grouped = await prisma.car.groupBy({
+      by: ['brand'],
+      where: {
+        brand: { notIn: HIDDEN_BRANDS },
+        isDemoted: false,
+        isCanonical: true,
+      },
+      _count: { brand: true },
     })
 
-    const brandCounts = new Map<string, Set<string>>()
-    for (const row of rows) {
-      if (!brandCounts.has(row.brand)) {
-        brandCounts.set(row.brand, new Set<string>())
-      }
-      brandCounts.get(row.brand)!.add(row.name)
-    }
-
-    return Array.from(brandCounts.entries())
-      .map(([name, models]) => ({ name, count: models.size }))
+    return grouped
+      .map(row => ({ name: row.brand, count: row._count.brand }))
       .sort((a, b) => a.name.localeCompare(b.name))
   } catch (error) {
     logger.error('fetchBrandStats failed', {
@@ -740,6 +1052,10 @@ export async function fetchBrandStats(): Promise<{ name: string; count: number }
 }
 
 // ── Trim Identity Deduplicator ─────────────────────────────────────────────────
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /**
  * Deduplicate variants by analyzing exclusively their 'Trim Identity'.
  * Strips brand, model family, years, generation prefixes, and chassis codes to safely merge identical trims.
@@ -751,8 +1067,8 @@ function deduplicateByTrimIdentity<T extends { name: string; year?: number; hors
   for (const car of cars) {
     let clean = car.name
       // Strip Brand and Model Family
-      .replace(new RegExp(`\\b${brand}\\b`, 'ig'), '')
-      .replace(new RegExp(`\\b${modelFamily}\\b`, 'ig'), '')
+      .replace(new RegExp(`\\b${escapeRegExp(brand)}\\b`, 'ig'), '')
+      .replace(new RegExp(`\\b${escapeRegExp(modelFamily)}\\b`, 'ig'), '')
       // Strip Generations
       .replace(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(st|nd|rd|th))\b.*\bgeneration\b/ig, '')
       // Strip Chassis Codes (e.g., (992))
@@ -784,24 +1100,9 @@ function deduplicateByTrimIdentity<T extends { name: string; year?: number; hors
 }
 
 // ── Brand Segment Map ─────────────────────────────────────────────────────────
-const BRAND_SEGMENTS: Record<string, string[]> = {
-  hypercar:    ['Bugatti', 'Pagani', 'Koenigsegg', 'Rimac', 'SSC'],
-  supercar:    ['Ferrari', 'Lamborghini', 'McLaren', 'Aston Martin', 'Lotus'],
-  luxury:      ['Rolls-Royce', 'Bentley', 'Maserati', 'Maybach'],
-  premium:     ['Porsche', 'BMW', 'Mercedes-Benz', 'Audi', 'Lexus', 'Jaguar', 'Genesis', 'Cadillac', 'Lincoln', 'Volvo', 'Alfa Romeo', 'Infiniti', 'Acura'],
-  performance: ['Dodge', 'Chevrolet', 'Ford', 'Nissan', 'Subaru', 'Mazda', 'Polestar'],
-  ev:          ['Tesla', 'Rivian', 'Lucid', 'Polestar', 'NIO'],
-  mainstream:  ['Toyota', 'Honda', 'Hyundai', 'Kia', 'Volkswagen', 'Chevrolet', 'Ford', 'Nissan', 'Mazda', 'Subaru'],
-  offroad:     ['Jeep', 'Land Rover', 'Toyota', 'Ford'],
-}
 
 function getBrandSegment(brand: string): string[] {
-  const segments: string[] = []
-  for (const [segment, brands] of Object.entries(BRAND_SEGMENTS)) {
-    if (brands.some(b => b.toLowerCase() === brand.toLowerCase())) {
-      segments.push(segment)
-    }
-  }
+  const segments = getSegmentsForBrand(brand)
   return segments.length > 0 ? segments : ['other']
 }
 
@@ -836,7 +1137,7 @@ function similarityScore(
   return score
 }
 
-export async function fetchSimilarCars(
+async function _fetchSimilarCars(
   car: { id: string; brand: string; name: string; type: string; fuelType: string; year: number; price: number },
   limit = 4
 ): Promise<Partial<Car>[]> {
@@ -992,7 +1293,7 @@ export function normalizeModelFamilyName(raw: string): string {
   return cleaned.trim() || raw // Fallback to raw if we accidentally stripped everything
 }
 
-export async function fetchBrandModelFamilies(brandName: string) {
+async function _fetchBrandModelFamilies(brandName: string) {
   try {
     if (HIDDEN_BRANDS.includes(brandName)) return []
 
@@ -1041,11 +1342,16 @@ export async function fetchBrandModelFamilies(brandName: string) {
         singleVariantRecord: totalVariants === 1 ? mapPrismaCar(bestCar) : undefined,
       }
     }).sort((a, b) => {
-      // 1. Sort by actual Wikipedia popularity score
+      // 1. Flagship models always appear first
+      const flagA = getFlagshipBoost(brandName, a.modelName)
+      const flagB = getFlagshipBoost(brandName, b.modelName)
+      if (flagA !== flagB) return flagB - flagA
+
+      // 2. Sort by actual Wikipedia popularity score
       if (a.popularityScore !== b.popularityScore) {
         return b.popularityScore - a.popularityScore
       }
-      // 2. Fallback to Total Variants
+      // 3. Fallback to Total Variants
       return b.totalVariants - a.totalVariants
     })
 
@@ -1063,7 +1369,7 @@ export function extractVariantCategory(name: string, horsepower?: number | null)
     return 'Special Editions'
   }
   // Performance indicators (often M, AMG, RS, GT, SV, Performante, Competizione)
-  const perfRegex = /\b(gt\d*|rs|amg|m|svj|performante|competizione|cs|csl|black series|trofeo|qv)\b/i
+  const perfRegex = /\b(gt\d*|rs|amg|m\d+|bmw m|svj|performante|competizione|cs|csl|black series|trofeo|qv)\b/i
   if (perfRegex.test(name)) {
     return 'Performance & Track'
   }
@@ -1073,11 +1379,19 @@ export function extractVariantCategory(name: string, horsepower?: number | null)
   return 'Standard Lineup'
 }
 
-export async function fetchModelHierarchy(brandName: string, modelName: string) {
+async function _fetchModelHierarchy(brandName: string, modelName: string) {
   try {
     // Fetch all cars for the brand to normalize and filter in-memory
     const allCars = await prisma.car.findMany({
-        where: { brand: brandName, type: { notIn: HIDDEN_TYPES }, isDemoted: false },
+        where: { 
+            brand: brandName, 
+            type: { notIn: HIDDEN_TYPES }, 
+            isDemoted: false,
+            OR: [
+              { modelFamily: { contains: modelName, mode: 'insensitive' } },
+              { name: { contains: modelName, mode: 'insensitive' } }
+            ]
+        },
         select: CAR_LIST_SELECT,
         orderBy: { year: 'asc' }
     })
@@ -1091,20 +1405,48 @@ export async function fetchModelHierarchy(brandName: string, modelName: string) 
        return extractModelFamily(c.name, brandName).toLowerCase() === modelName.toLowerCase();
     })
     
-    // Grouping structure: Map<GenerationName, { categoryMap: Map<CategoryName, Car[]> }>
-    const genBuckets = new Map<string, Map<string, typeof matchingCars>>()
+    // Grouping structure: Map<GenerationName, { categoryMap: Map<CategoryName, Car[]>, meta }>
+    const genBuckets = new Map<string, {
+      catMap: Map<string, typeof matchingCars>,
+      faceliftYear: number | null,
+      generationStart: number | null,
+      generationEnd: number | null,
+    }>()
     
     // Helper to add to bucket
     const addToBucket = (genName: string, category: string, car: typeof matchingCars[0]) => {
-        if (!genBuckets.has(genName)) genBuckets.set(genName, new Map())
-        const catMap = genBuckets.get(genName)!
-        if (!catMap.has(category)) catMap.set(category, [])
-        catMap.get(category)!.push(car)
+        if (!genBuckets.has(genName)) {
+          genBuckets.set(genName, {
+            catMap: new Map(),
+            faceliftYear: null,
+            generationStart: null,
+            generationEnd: null,
+          })
+        }
+        const bucket = genBuckets.get(genName)!
+        if (!bucket.catMap.has(category)) bucket.catMap.set(category, [])
+        bucket.catMap.get(category)!.push(car)
+        
+        // Track generation metadata from DB columns
+        const carAny = car as any
+        if (carAny.faceliftYear && !bucket.faceliftYear) bucket.faceliftYear = carAny.faceliftYear
+        if (carAny.generationStart) {
+          if (!bucket.generationStart || carAny.generationStart < bucket.generationStart) {
+            bucket.generationStart = carAny.generationStart
+          }
+        }
+        if (carAny.generationEnd) {
+          if (!bucket.generationEnd || carAny.generationEnd > bucket.generationEnd) {
+            bucket.generationEnd = carAny.generationEnd
+          }
+        }
     }
 
     const keywordGens = ['first generation', 'second generation', 'third generation', 'fourth generation', 'fifth generation', 'sixth generation', 'seventh generation', 'eighth generation', 'ninth generation', 'tenth generation', 'mk1', 'mk2', 'mk3', 'mk4', 'mk5', 'mk6', 'mk7', 'mk8', 'series i', 'series ii', 'series iii']
     
     for (const c of matchingCars) {
+        const carAny = c as any
+        
         // 1. Check explicit overrides first
         const override = TAXONOMY_OVERRIDES[brandName]?.[c.name]
         let assignedGen = override?.generation
@@ -1115,7 +1457,16 @@ export async function fetchModelHierarchy(brandName: string, modelName: string) 
            assignedCat = extractVariantCategory(c.name, c.horsepower)
         }
         
-        // 3. Determine Generation
+        // 3. Determine Generation — prefer DB column from classifier
+        if (!assignedGen && carAny.generation) {
+           assignedGen = carAny.generation
+        }
+        
+        // Handle Concepts and One-offs (including those nulled out by LLM using '-')
+        if (assignedGen === '-' || c.variantType === 'concept' || c.variantType === 'special_edition' || c.name.toLowerCase().includes('concept')) {
+            assignedGen = 'Concepts & One-offs'
+        }
+        
         if (!assignedGen) {
            const lowerName = c.name.toLowerCase()
            let foundGen = false
@@ -1148,11 +1499,12 @@ export async function fetchModelHierarchy(brandName: string, modelName: string) 
         addToBucket(assignedGen!, assignedCat, c)
     }
     
-    const hierarchy = Array.from(genBuckets.entries()).map(([genName, catMap]) => {
+    const hierarchy = Array.from(genBuckets.entries()).map(([genName, bucket]) => {
+        const { catMap, faceliftYear, generationStart, generationEnd } = bucket
         // Build categories
         const categories = Array.from(catMap.entries()).map(([catName, carsInCat]) => ({
             name: catName,
-            variants: deduplicateByTrimIdentity(carsInCat, brandName, modelName)
+            variants: deduplicateByTrimIdentity(carsInCat, brandName, modelName).map(mapPrismaCar)
         })).sort((a, b) => {
             // Order: Standard Lineup -> Performance -> Special Editions -> Other
             const order = ['Standard Lineup', 'Performance & Track', 'Special Editions', 'Other Variants']
@@ -1162,17 +1514,25 @@ export async function fetchModelHierarchy(brandName: string, modelName: string) 
         // Calculate total variants in this generation
         const totalVariants = categories.reduce((acc, cat) => acc + cat.variants.length, 0)
         
+        // Build year range string
+        let yearRange: string | null = null
+        if (generationStart) {
+          yearRange = generationEnd ? `${generationStart}–${generationEnd}` : `${generationStart}–present`
+        }
+        
         return {
            name: genName,
            categories,
            totalVariants,
-           // For sorting: try to extract a year or use the earliest car's year
-           sortYear: Array.from(catMap.values()).flat().reduce((min, car) => Math.min(min, car.year || 9999), 9999)
+           faceliftYear,
+           yearRange,
+           // For sorting: use DB generationStart or earliest car year
+           sortYear: generationStart || Array.from(catMap.values()).flat().reduce((min, car) => Math.min(min, car.year || 9999), 9999)
         }
     })
     
     hierarchy.sort((a,b) => {
-        // Sort newest generation first based on the earliest car in that generation
+        // Sort newest generation first
         return b.sortYear - a.sortYear
     })
     
@@ -1181,4 +1541,136 @@ export async function fetchModelHierarchy(brandName: string, modelName: string) 
     logger.error('fetchModelHierarchy failed', { error: String(err) })
     return []
   }
+}
+
+// ── Fetch cross-link relationships for a car ──
+async function _fetchCarRelationships(carId: string) {
+  try {
+    const [outgoing, incoming] = await Promise.all([
+      prisma.carRelationship.findMany({
+        where: { sourceCarId: carId },
+        include: {
+          targetCar: {
+            select: { id: true, name: true, brand: true, image: true, cdnImage: true, year: true, type: true }
+          }
+        }
+      }),
+      prisma.carRelationship.findMany({
+        where: { targetCarId: carId },
+        include: {
+          sourceCar: {
+            select: { id: true, name: true, brand: true, image: true, cdnImage: true, year: true, type: true }
+          }
+        }
+      }),
+    ])
+    
+    // Normalize: always present the "other" car as the related one
+    const relationships = [
+      ...outgoing.map(r => ({
+        id: r.id,
+        relationshipType: r.relationshipType,
+        note: r.note,
+        relatedCar: r.targetCar,
+      })),
+      ...incoming.map(r => ({
+        id: r.id,
+        relationshipType: r.relationshipType,
+        note: r.note,
+        relatedCar: r.sourceCar,
+      })),
+    ]
+    
+    return relationships
+  } catch (err) {
+    logger.error('fetchCarRelationships failed', { error: String(err) })
+    return []
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CACHE WRAPPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const fetchCarOfTheDay = async () => {
+  return unstable_cache(
+    async () => _fetchCarOfTheDay(),
+    ['car-of-the-day'],
+    { tags: ['featured'], revalidate: 1800 }
+  )();
+}
+
+export const fetchFeaturedCars = async (limit = 8) => {
+  // Include current hour in cache key so each hour produces a fresh selection
+  const hourKey = String(Math.floor(Date.now() / 3_600_000));
+  return unstable_cache(
+    async () => _fetchFeaturedCars(limit),
+    ['featured-cars', String(limit), hourKey],
+    { tags: ['featured'], revalidate: 600 }
+  )();
+}
+
+export const fetchBrandCars = async (brandName: string) => {
+  return unstable_cache(
+    async () => _fetchBrandCars(brandName),
+    ['brand-cars', brandName],
+    { tags: ['brand', brandName], revalidate: 3600 }
+  )();
+}
+
+export const fetchCarById = async (id: string) => {
+  return unstable_cache(
+    async () => _fetchCarById(id),
+    ['car', id],
+    { tags: ['car-details', `car-${id}`], revalidate: 3600 }
+  )();
+}
+
+export const fetchBrands = async () => {
+  return unstable_cache(
+    async () => _fetchBrands(),
+    ['brands'],
+    { tags: ['global-stats'], revalidate: 3600 }
+  )();
+}
+
+export const fetchBrandStats = async () => {
+  return unstable_cache(
+    async () => _fetchBrandStats(),
+    ['brand-stats'],
+    { tags: ['global-stats'], revalidate: 3600 }
+  )();
+}
+
+export const fetchSimilarCars = async (car: any, limit = 4) => {
+  // Pass only primitive ID to cache key to avoid serialization issues
+  return unstable_cache(
+    async () => _fetchSimilarCars(car, limit),
+    ['similar-cars', car.id, String(limit)],
+    { tags: ['similar', `car-${car.id}`], revalidate: 3600 }
+  )();
+}
+
+export const fetchBrandModelFamilies = async (brandName: string) => {
+  return unstable_cache(
+    async () => _fetchBrandModelFamilies(brandName),
+    ['families', brandName],
+    { tags: ['brand', brandName], revalidate: 3600 }
+  )();
+}
+
+export const fetchModelHierarchy = async (brandName: string, modelName: string) => {
+  return unstable_cache(
+    async () => _fetchModelHierarchy(brandName, modelName),
+    ['hierarchy', brandName, modelName],
+    { tags: ['brand', brandName], revalidate: 3600 }
+  )();
+}
+
+export const fetchCarRelationships = async (carId: string) => {
+  return unstable_cache(
+    async () => _fetchCarRelationships(carId),
+    ['relationships', carId],
+    { tags: [`car-${carId}`], revalidate: 3600 }
+  )();
 }

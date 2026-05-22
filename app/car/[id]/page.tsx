@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   ChevronLeft,
+  ChevronRight,
   Fuel,
   Activity,
   Car as CarIcon,
@@ -28,8 +29,9 @@ import {
 import { Speedometer } from '@/components/speedometer'
 import { CarCard } from '@/components/car-card'
 import { CompareBar } from '@/components/compare-bar'
-import { fetchCarById, fetchSimilarCars, fetchModelHierarchy, extractModelFamily } from '@/lib/api-service'
-import { CarGallery, CarActions, ReportIssueButton } from '@/components/car-details-client'
+import { RelatedModels } from '@/components/related-models'
+import { fetchCarById, fetchSimilarCars, fetchModelHierarchy, fetchCarRelationships, extractModelFamily } from '@/lib/api-service'
+import { CarGallery, CarActions, ReportIssueButton, CarRating } from '@/components/car-details-client'
 import { estimatePerformance, estimatePrice } from '@/lib/utils'
 
 export const revalidate = 3600 // Cache page for 1 hour (ISR)
@@ -44,14 +46,23 @@ export default async function CarDetailsPage({
 
   if (!car) notFound()
 
-  // Fetch similar cars (same type, excludes other year variants of this model)
-  const similarCars = await fetchSimilarCars(car, 4) as typeof car[]
-
-  // Fetch all year variants of this exact model
+  // Fetch similar cars, model hierarchy, and relationships in parallel
   const modelFamilyName = extractModelFamily(car.name, car.brand)
-  const fullHierarchy = await fetchModelHierarchy(car.brand, modelFamilyName)
+  const [similarCars, fullHierarchy, relationships] = await Promise.all([
+    fetchSimilarCars(car, 4) as Promise<typeof car[]>,
+    fetchModelHierarchy(car.brand, modelFamilyName),
+    fetchCarRelationships(id),
+  ])
 
   // ── Spec groups ───────────────────────────────────────────────────────────
+  const taxonomy = [
+    { label: 'Generation',    value: car.generation },
+    { label: 'Years Active',  value: car.generationStart ? `${car.generationStart} – ${car.generationEnd || 'Present'}` : null },
+    { label: 'Facelift Year', value: car.faceliftYear ? String(car.faceliftYear) : null },
+    { label: 'Body Style',    value: car.bodyStyle },
+    { label: 'Variant Type',  value: car.variantType ? car.variantType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : null },
+  ].filter(s => s.value)
+
   const powertrain = [
     { label: 'Engine',        value: car.engine },
     { label: 'Transmission',  value: car.transmission },
@@ -137,15 +148,51 @@ export default async function CarDetailsPage({
             <div className="flex flex-col">
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-primary uppercase tracking-wider">
-                    {car.brand}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-primary uppercase tracking-wider">
+                      {car.brand}
+                    </span>
+                    <span className="text-muted-foreground/40 text-sm">•</span>
+                    <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                      {modelFamilyName}
+                    </span>
+                  </div>
                   <ReportIssueButton car={car} />
                 </div>
 
                 <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gradient mb-4">
-                  {car.name}
+                  {car.cleanName || car.name}
                 </h1>
+
+                {/* Taxonomy Lineage */}
+                {(car.generation || car.bodyStyle || car.variantType) && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-widest mb-6">
+                    {car.generation && (
+                      <div className="flex items-center gap-1.5 text-primary/80 bg-primary/10 px-2 py-1 rounded-md">
+                        <Layers className="w-3.5 h-3.5" />
+                        {car.generation}
+                      </div>
+                    )}
+                    {car.faceliftYear && (
+                      <>
+                        {car.generation && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+                        <span className="px-2 py-1 bg-secondary rounded-md">FL {car.faceliftYear}</span>
+                      </>
+                    )}
+                    {car.bodyStyle && (
+                      <>
+                        {(car.generation || car.faceliftYear) && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+                        <span className="px-2 py-1 bg-secondary rounded-md">{car.bodyStyle}</span>
+                      </>
+                    )}
+                    {car.variantType && (
+                      <>
+                        {(car.generation || car.faceliftYear || car.bodyStyle) && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+                        <span className="px-2 py-1 bg-secondary rounded-md">{car.variantType.replaceAll('_', ' ')}</span>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <p className="text-lg text-muted-foreground leading-relaxed mb-8">
                   {car.description}
@@ -165,13 +212,7 @@ export default async function CarDetailsPage({
                   </div>
                   
                   {/* Rating moved here */}
-                  <div className="flex flex-col items-end">
-                    <span className="text-sm text-muted-foreground mb-1">User Rating</span>
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent/10 text-accent border border-accent/20">
-                      <Star className="w-4 h-4 fill-accent" />
-                      <span className="font-semibold">{car.rating?.toFixed(1) ?? '—'}</span>
-                    </div>
-                  </div>
+                  <CarRating carId={car.id} initialRating={car.rating ?? 0} />
                 </div>
 
                 <CarActions car={car} />
@@ -191,11 +232,14 @@ export default async function CarDetailsPage({
         </section>
 
         {/* Performance Metrics */}
-        <section className="py-24 bg-card/30 border-y border-border/40">
+        <section className="section-gap bg-card/30 border-y border-border/40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <h2 className="text-2xl sm:text-3xl font-bold text-gradient text-center mb-16">
-              Performance
-            </h2>
+            <div className="text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl font-bold text-gradient text-glow">
+                Performance
+              </h2>
+              <p className="text-sm text-muted-foreground mt-3">Key performance metrics at a glance</p>
+            </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
               <Speedometer value={estimatePerformance(car).hp} maxValue={1200} label="Horsepower" unit="hp" />
               <Speedometer value={estimatePerformance(car).torque} maxValue={1500} label="Torque" unit="Nm" />
@@ -206,8 +250,9 @@ export default async function CarDetailsPage({
         </section>
 
         {/* Full Technical Specifications */}
-        <section className="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl sm:text-3xl font-bold text-gradient mb-12">Technical Specifications</h2>
+        <section className="section-gap max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-2xl sm:text-3xl font-bold text-gradient mb-8">Technical Specifications</h2>
+          <SpecGrid title="Taxonomy & Lineage" specs={taxonomy} />
           <SpecGrid title="Powertrain & Economy" specs={powertrain} />
           <SpecGrid title="Dimensions & Chassis" specs={chassis} />
           <SpecGrid title="Handling" specs={handling} />
@@ -217,8 +262,8 @@ export default async function CarDetailsPage({
 
         {/* Model Trim Grid — All generations of this model family */}
         {fullHierarchy.length > 0 && (
-          <section className="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border/40">
-            <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <section className="section-gap max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border/40">
+            <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
               <div>
                 <h2 className="text-2xl sm:text-3xl font-bold text-gradient">The {modelFamilyName} Family</h2>
                 <p className="text-muted-foreground mt-2">Explore other generations and officially recognized trims in the {car.brand} {modelFamilyName} lineup.</p>
@@ -263,10 +308,17 @@ export default async function CarDetailsPage({
           </section>
         )}
 
+        {/* Related Models (Cross-links: rebadges, platform siblings, EV sisters) */}
+        {relationships.length > 0 && (
+          <section className="section-gap max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border/40">
+            <RelatedModels relationships={relationships} />
+          </section>
+        )}
+
         {/* Similar Cars */}
         {similarCars.length > 0 && (
-          <section className="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border/40">
-            <h2 className="text-2xl sm:text-3xl font-bold text-gradient mb-12">Similar Cars</h2>
+          <section className="section-gap max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-border/40">
+            <h2 className="text-2xl sm:text-3xl font-bold text-gradient mb-8">Similar Cars</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {similarCars.map((c, i) => (
                 <CarCard key={c.id} car={c} index={i} />

@@ -1,10 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { Search, X, ArrowRight, Zap, Tag, Loader2, Car as CarIcon } from 'lucide-react'
+import { BRAND_SEGMENTS } from '@/lib/constants'
+import { estimatePrice, cleanCarName, optimizeThumb } from '@/lib/utils'
+import { Command } from 'cmdk'
+import * as Dialog from '@radix-ui/react-dialog'
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
+import useSWR from 'swr'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, X, ArrowRight, Zap, Tag, Loader2 } from 'lucide-react'
-import { cn, estimatePrice, cleanCarName } from '@/lib/utils'
 
 const POPULAR_BRANDS = ['Porsche', 'Ferrari', 'BMW', 'Mercedes-Benz', 'Lamborghini', 'Tesla', 'Audi', 'McLaren']
 const QUICK_SEARCHES = [
@@ -30,95 +35,34 @@ interface SearchModalProps {
   onClose: () => void
 }
 
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
 export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const [query, setQuery] = useState('')
-  const [activeIndex, setActiveIndex] = useState(-1)
-  const [results, setResults] = useState<SearchResult[]>([])
-  const [loading, setLoading] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const listRef = useRef<HTMLUListElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const queryCache = useRef(new Map<string, SearchResult[]>())
   const router = useRouter()
 
-  // Debounced API search
-  const search = useCallback((q: string) => {
-    // Cancel any in-flight request
-    abortRef.current?.abort()
-
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-
-    const trimmed = q.trim()
-    if (trimmed.length === 0) {
-      setResults([])
-      setLoading(false)
-      setSearchError(null)
-      return
+  // Fetch full lightweight search index when modal opens
+  const { data: searchIndex, isLoading } = useSWR<SearchResult[]>(
+    isOpen ? '/api/search/index' : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 3600000, // 1 hour
     }
+  )
 
-    setLoading(true)
-
-    // Check cache first for instant results
-    if (queryCache.current.has(trimmed)) {
-      setResults(queryCache.current.get(trimmed) || [])
-      setLoading(false)
-      setSearchError(null)
-      return
-    }
-
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const controller = new AbortController()
-        abortRef.current = controller
-        // 10s timeout
-        const timeoutId = setTimeout(() => controller.abort(), 10_000)
-        const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
-          signal: controller.signal,
-        })
-        clearTimeout(timeoutId)
-        if (res.ok) {
-          const data = await res.json()
-          queryCache.current.set(trimmed, data)
-          setResults(data)
-          setSearchError(null)
-        } else {
-          setSearchError('Search unavailable. Please try again.')
-        }
-      } catch (e: any) {
-        if (e.name !== 'AbortError') {
-          console.error('Search failed:', e)
-          setSearchError(e.name === 'AbortError' ? null : 'Search timed out. Please try again.')
-        }
-      } finally {
-        setLoading(false)
-      }
-    }, 150)
-  }, [])
-
-  // Reset on open/close
+  // Reset query on open/close and focus input when opened
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) {
       setQuery('')
-      setResults([])
-      setActiveIndex(-1)
-      setLoading(false)
-      setTimeout(() => inputRef.current?.focus(), 50)
     } else {
-      abortRef.current?.abort()
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+      // Slight delay to allow dialog animation to complete before focusing
+      const t = setTimeout(() => inputRef.current?.focus(), 60)
+      return () => clearTimeout(t)
     }
   }, [isOpen])
-
-  // Escape to close
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
 
   const navigateTo = useCallback((car: SearchResult) => {
     onClose()
@@ -128,246 +72,234 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const showAllResults = useCallback((q: string) => {
     onClose()
     const qLower = q.trim().toLowerCase()
-    const knownBrands = ['porsche', 'ferrari', 'bmw', 'mercedes', 'mercedes-benz', 'lamborghini', 'tesla', 'audi', 'mclaren', 'toyota', 'honda', 'ford', 'chevrolet', 'dodge', 'nissan', 'hyundai', 'kia', 'volvo', 'mazda', 'subaru', 'lexus', 'bugatti', 'koenigsegg', 'pagani', 'aston martin', 'maserati', 'bentley', 'rolls-royce', 'jaguar', 'land rover', 'fiat', 'mitsubishi', 'suzuki', 'acura', 'infiniti', 'genesis', 'alfa romeo', 'cadillac', 'lincoln', 'chrysler', 'buick', 'gmc', 'ram', 'jeep', 'pontiac', 'saturn', 'oldsmobile', 'plymouth', 'shelby', 'alpine']
     
-    // Quick normalize for Mercedes
-    let match = knownBrands.find(b => b === qLower)
-    if (match === 'mercedes') match = 'mercedes-benz'
+    // Flatten all canonical brand names from BRAND_SEGMENTS
+    const canonicalBrands = Object.values(BRAND_SEGMENTS).flat()
     
-    if (match) {
-      // Find proper capitalization from POPULAR_BRANDS or fallback
-      const capitalized = ['Porsche', 'Ferrari', 'BMW', 'Mercedes-Benz', 'Lamborghini', 'Tesla', 'Audi', 'McLaren'].find(b => b.toLowerCase() === match) || match.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-      router.push(`/brands/${capitalized.replace('Bmw', 'BMW').replace('Gmc', 'GMC').replace('Ram', 'RAM')}`)
+    // Additional aliases
+    let matchBrand = canonicalBrands.find(b => b.toLowerCase() === qLower)
+    
+    // Handle common aliases manually
+    if (!matchBrand && qLower === 'mercedes') {
+      matchBrand = 'Mercedes-Benz'
+    }
+    
+    if (matchBrand) {
+      router.push(`/brands/${matchBrand}`)
     } else {
       router.push(`/search?q=${encodeURIComponent(q)}`)
     }
   }, [router, onClose])
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value
-    setQuery(val)
-    setActiveIndex(-1)
-    search(val)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (results.length === 0 && e.key !== 'Enter') return
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setActiveIndex(i => Math.min(i + 1, results.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setActiveIndex(i => Math.max(i - 1, -1))
-    } else if (e.key === 'Enter') {
-      if (activeIndex >= 0 && results[activeIndex]) {
-        navigateTo(results[activeIndex])
-      } else if (query.trim()) {
-        showAllResults(query.trim())
-      }
-    }
-  }
-
-  // Scroll active item into view
-  useEffect(() => {
-    if (activeIndex >= 0 && listRef.current) {
-      const item = listRef.current.children[activeIndex] as HTMLElement
-      item?.scrollIntoView({ block: 'nearest' })
-    }
-  }, [activeIndex])
+  // Limit results to prevent rendering 5000+ DOM nodes and freezing the browser
+  const filteredCars = useMemo(() => {
+    if (!query.trim() || !searchIndex) return []
+    const s = query.toLowerCase()
+    return searchIndex
+      .filter(car => `${car.name} ${car.brand} ${car.type}`.toLowerCase().includes(s))
+      .slice(0, 50)
+  }, [query, searchIndex])
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-md"
-            onClick={onClose}
-          />
+    <Dialog.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <AnimatePresence>
+          {isOpen && (
+            <>
+              {/* Backdrop */}
+              <Dialog.Overlay asChild forceMount>
+                <motion.div
+                  key="search-overlay"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="fixed inset-0 z-[70] bg-background/80 backdrop-blur-md"
+                />
+              </Dialog.Overlay>
 
-          {/* Modal */}
-          <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] px-4 pointer-events-none">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.97, y: -8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97, y: -8 }}
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full max-w-2xl pointer-events-auto will-change-transform"
-            >
-              <div className="rounded-2xl bg-card border border-border/60 shadow-2xl shadow-black/40 overflow-hidden">
+              {/* Panel */}
+              <Dialog.Content asChild forceMount aria-describedby={undefined}>
+                <motion.div
+                  key="search-panel"
+                  initial={{ opacity: 0, scale: 0.96, y: -12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: -12 }}
+                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                  className="fixed inset-0 z-[71] flex items-start justify-center pt-[12vh] px-4 pointer-events-none"
+                >
+                  <VisuallyHidden asChild>
+                    <Dialog.Title>Search cars</Dialog.Title>
+                  </VisuallyHidden>
 
-                {/* Input row */}
-                <div className="flex items-center gap-3 px-4 py-4 border-b border-border/40">
-                  {loading ? (
-                    <Loader2 className="w-5 h-5 text-primary flex-shrink-0 animate-spin" />
-                  ) : (
-                    <Search className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-                  )}
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={query}
-                    onChange={handleInputChange}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Search cars, brands, types..."
-                    className="flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground outline-none"
-                  />
-                  {query && (
-                    <button
-                      onClick={() => { setQuery(''); setResults([]); inputRef.current?.focus() }}
-                      className="p-1 rounded-md hover:bg-secondary transition-colors"
-                    >
-                      <X className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                  )}
-                  <kbd className="hidden sm:flex items-center gap-0.5 text-xs text-muted-foreground border border-border rounded px-1.5 py-0.5">
-                    Esc
-                  </kbd>
-                </div>
+                  <Command
+                    shouldFilter={false}
+                    className="w-full max-w-2xl bg-card rounded-2xl border border-border/60 shadow-2xl shadow-black/40 overflow-hidden pointer-events-auto"
+                  >
+                    {/* Input row */}
+                    <div className="flex items-center gap-3 px-4 py-4 border-b border-border/40" cmdk-input-wrapper="">
+                      {isLoading && !searchIndex ? (
+                        <Loader2 className="w-5 h-5 text-primary flex-shrink-0 animate-spin" />
+                      ) : (
+                        <Search className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                      )}
+                      <Command.Input
+                        ref={inputRef}
+                        value={query}
+                        onValueChange={setQuery}
+                        placeholder="Search cars, brands, types..."
+                        className="flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground outline-none border-none focus:ring-0 caret-primary"
+                      />
+                      {query && (
+                        <button
+                          onClick={() => setQuery('')}
+                          className="p-1.5 mr-1 rounded-full hover:bg-secondary/80 transition-colors text-muted-foreground hover:text-foreground"
+                          title="Clear search"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button 
+                        onClick={onClose}
+                        className="flex items-center justify-center p-2 rounded-full hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-all sm:hidden"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={onClose}
+                        className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 border border-border rounded-lg transition-all"
+                      >
+                        Close
+                        <kbd className="font-sans opacity-60">Esc</kbd>
+                      </button>
+                    </div>
 
-                <div className="max-h-[60vh] overflow-y-auto">
+                    <Command.List className="max-h-[60vh] overflow-y-auto overflow-x-hidden p-2 cmdk-list">
+                      {/* Custom Empty State */}
+                      {query.trim() && !isLoading && filteredCars.length === 0 && (
+                        <div className="py-12 text-center text-muted-foreground text-sm">
+                          No cars found for &ldquo;{query}&rdquo;
+                        </div>
+                      )}
 
-                  {/* Live results */}
-                  {results.length > 0 && (
-                    <div className="p-2">
-                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground px-2 py-1.5 font-semibold">
-                        Cars
-                      </p>
-                      <ul ref={listRef} className="space-y-0.5">
-                        {results.map((car, i) => (
-                          <li key={car.id}>
-                            <button
-                              onMouseEnter={() => setActiveIndex(i)}
-                              onClick={() => navigateTo(car)}
-                              className={cn(
-                                'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors group',
-                                activeIndex === i ? 'bg-primary/10' : 'hover:bg-secondary/60'
-                              )}
+                      {/* Default state: brand pills + quick searches */}
+                      {!query.trim() && (
+                        <div className="p-2 space-y-6">
+                          {/* Popular Brands */}
+                          <div>
+                            <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-3 flex items-center gap-1.5">
+                              <Tag className="w-3 h-3" /> Popular Brands
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {POPULAR_BRANDS.map(brand => (
+                                <button
+                                  key={brand}
+                                  onClick={() => showAllResults(brand)}
+                                  className="text-sm px-4 py-2 rounded-xl bg-secondary/80 hover:bg-primary hover:text-primary-foreground transition-all duration-200 font-medium"
+                                >
+                                  {brand}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Quick Filters */}
+                          <div>
+                            <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-3 flex items-center gap-1.5">
+                              <Zap className="w-3 h-3" /> Quick Filters
+                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {QUICK_SEARCHES.map(q => (
+                                <button
+                                  key={q.label}
+                                  onClick={() => showAllResults(q.query)}
+                                  className="text-sm text-left px-4 py-3 rounded-xl bg-secondary/50 hover:bg-secondary transition-all duration-200 font-medium"
+                                >
+                                  {q.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Live Search Results */}
+                      {filteredCars.length > 0 && (
+                        <Command.Group heading="Cars">
+                          {filteredCars.map((car) => (
+                            <Command.Item
+                              key={car.id}
+                              value={car.id}
+                              onSelect={() => navigateTo(car)}
+                              className="cmdk-item flex items-center gap-4 px-3 py-3 rounded-xl cursor-pointer aria-selected:bg-primary/10 aria-selected:text-primary transition-colors group"
                             >
                               {/* Thumbnail */}
-                              <div className="w-14 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-secondary">
-                                {car.image && (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={car.image || ''}
-                                    alt={cleanCarName(car.name, car.brand)}
-                                    className="w-full h-full object-cover"
-                                    loading="lazy"
-                                    referrerPolicy="no-referrer"
-                                    onError={e => (e.currentTarget.style.display = 'none')}
-                                  />
+                              <div className="w-16 h-11 rounded-lg overflow-hidden flex-shrink-0 bg-secondary relative">
+                                {car.image ? (
+                                  <>
+                                    <div className="absolute inset-0 shimmer" />
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={optimizeThumb(car.image, 128) || ''}
+                                      alt={cleanCarName(car.name, car.brand)}
+                                      className="absolute inset-0 w-full h-full object-cover img-reveal"
+                                      loading="lazy"
+                                      decoding="async"
+                                      referrerPolicy="no-referrer"
+                                      onLoad={e => e.currentTarget.classList.add('loaded')}
+                                      onError={e => (e.currentTarget.style.display = 'none')}
+                                    />
+                                  </>
+                                ) : (
+                                  <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/30">
+                                    <CarIcon className="w-5 h-5" />
+                                  </div>
                                 )}
                               </div>
 
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold truncate">{cleanCarName(car.name, car.brand)}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {car.brand} · {car.type} · ${car.price > 0 ? car.price.toLocaleString() : estimatePrice(car as any).toLocaleString()}
+                                <div className="text-sm font-semibold truncate text-foreground">{cleanCarName(car.name, car.brand)}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                                  <span className="font-medium text-foreground/70">{car.brand}</span>
+                                  <span>&middot;</span>
+                                  <span>{car.type}</span>
+                                  <span>&middot;</span>
+                                  <span>${car.price > 0 ? car.price.toLocaleString() : estimatePrice(car as any).toLocaleString()}</span>
                                 </div>
                               </div>
 
-                              <ArrowRight className={cn(
-                                'w-4 h-4 text-muted-foreground flex-shrink-0 transition-opacity',
-                                activeIndex === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                              )} />
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-
-                      {/* "Show all results" */}
+                              <ArrowRight className="w-4 h-4 text-primary opacity-0 group-aria-selected:opacity-100 transition-opacity flex-shrink-0" />
+                            </Command.Item>
+                          ))}
+                        </Command.Group>
+                      )}
+                      
+                      {/* Show all results action */}
                       {query.trim() && (
-                        <button
-                          onClick={() => showAllResults(query.trim())}
-                          className="w-full mt-1 flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-secondary/60 transition-colors text-sm text-primary font-medium"
+                        <Command.Item
+                          value="show-all"
+                          onSelect={() => showAllResults(query.trim())}
+                          className="cmdk-item flex items-center gap-3 px-3 py-3 mt-2 border-t border-border/40 rounded-xl cursor-pointer aria-selected:bg-secondary transition-colors text-sm font-medium text-primary"
                         >
                           <Search className="w-4 h-4" />
                           Show all results for &ldquo;{query}&rdquo;
-                        </button>
+                        </Command.Item>
                       )}
+                    </Command.List>
+
+                    {/* Footer hint */}
+                    <div className="px-4 py-3 border-t border-border/40 flex items-center gap-5 text-[11px] text-muted-foreground bg-secondary/20">
+                      <span className="flex items-center gap-1.5"><kbd className="bg-background border border-border shadow-sm rounded px-1.5 py-0.5 font-sans">↑↓</kbd> navigate</span>
+                      <span className="flex items-center gap-1.5"><kbd className="bg-background border border-border shadow-sm rounded px-1.5 py-0.5 font-sans">↵</kbd> open</span>
+                      <span className="flex items-center gap-1.5"><kbd className="bg-background border border-border shadow-sm rounded px-1.5 py-0.5 font-sans">Esc</kbd> close</span>
                     </div>
-                  )}
-
-                  {/* Error state */}
-                  {searchError && (
-                    <div className="py-8 text-center text-sm">
-                      <p className="text-destructive mb-2">{searchError}</p>
-                      <button
-                        onClick={() => { setSearchError(null); search(query) }}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Empty state */}
-                  {query.trim() && results.length === 0 && !loading && !searchError && (
-                    <div className="py-12 text-center text-muted-foreground text-sm">
-                      No cars found for &ldquo;{query}&rdquo;
-                    </div>
-                  )}
-
-                  {/* Default state: brand pills + quick searches */}
-                  {!query.trim() && (
-                    <div className="p-4 space-y-5">
-
-                      {/* Popular Brands */}
-                      <div>
-                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-2 flex items-center gap-1.5">
-                          <Tag className="w-3 h-3" /> Popular Brands
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {POPULAR_BRANDS.map(brand => (
-                            <button
-                              key={brand}
-                              onClick={() => showAllResults(brand)}
-                              className="text-sm px-3 py-1.5 rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors font-medium"
-                            >
-                              {brand}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Quick Filters */}
-                      <div>
-                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-2 flex items-center gap-1.5">
-                          <Zap className="w-3 h-3" /> Quick Filters
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {QUICK_SEARCHES.map(q => (
-                            <button
-                              key={q.label}
-                              onClick={() => showAllResults(q.query)}
-                              className="text-sm text-left px-3 py-2 rounded-lg bg-secondary/60 hover:bg-secondary transition-colors"
-                            >
-                              {q.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer hint */}
-                <div className="px-4 py-2.5 border-t border-border/40 flex items-center gap-4 text-[11px] text-muted-foreground">
-                  <span className="flex items-center gap-1"><kbd className="border border-border rounded px-1">↑↓</kbd> navigate</span>
-                  <span className="flex items-center gap-1"><kbd className="border border-border rounded px-1">↵</kbd> open</span>
-                  <span className="flex items-center gap-1"><kbd className="border border-border rounded px-1">Esc</kbd> close</span>
-                </div>
-
-              </div>
-            </motion.div>
-          </div>
-        </>
-      )}
-    </AnimatePresence>
+                  </Command>
+                </motion.div>
+              </Dialog.Content>
+            </>
+          )}
+        </AnimatePresence>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }

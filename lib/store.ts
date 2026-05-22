@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Car } from './types'
+import { getSegmentsForBrand } from './constants'
 
 /** Union of car types used for category filtering. */
 type SelectedType = 'All' | Car['type']
@@ -14,27 +15,7 @@ interface GarageCollection {
   carIds: string[]
 }
 
-// ── Brand → Segment mapping (for session context biasing) ────────────────────
-const SESSION_BRAND_SEGMENTS: Record<string, string[]> = {
-  hypercar:    ['Bugatti', 'Pagani', 'Koenigsegg', 'Rimac', 'SSC'],
-  supercar:    ['Ferrari', 'Lamborghini', 'McLaren', 'Aston Martin', 'Lotus'],
-  luxury:      ['Rolls-Royce', 'Bentley', 'Maserati', 'Maybach'],
-  premium:     ['Porsche', 'BMW', 'Mercedes-Benz', 'Audi', 'Lexus', 'Jaguar', 'Genesis', 'Cadillac', 'Lincoln', 'Volvo', 'Alfa Romeo', 'Infiniti', 'Acura'],
-  performance: ['Dodge', 'Chevrolet', 'Ford', 'Nissan', 'Subaru', 'Mazda'],
-  ev:          ['Tesla', 'Rivian', 'Lucid', 'Polestar', 'NIO'],
-  mainstream:  ['Toyota', 'Honda', 'Hyundai', 'Kia', 'Volkswagen'],
-  offroad:     ['Jeep', 'Land Rover'],
-}
 
-function getSegmentsForBrand(brand: string): string[] {
-  const segments: string[] = []
-  for (const [segment, brands] of Object.entries(SESSION_BRAND_SEGMENTS)) {
-    if (brands.some(b => b.toLowerCase() === brand.toLowerCase())) {
-      segments.push(segment)
-    }
-  }
-  return segments
-}
 
 interface CarStore {
   favorites: string[]
@@ -95,10 +76,7 @@ export const useCarStore = create<CarStore>()(
     (set) => ({
       favorites: [],
       compareList: [],
-      garage: [
-        { id: 'dream-cars', name: 'Dream Cars', carIds: [] },
-        { id: 'future-buy', name: 'Future Buy', carIds: [] },
-      ],
+      garage: [],
       searchQuery: '',
       selectedType: 'All',
 

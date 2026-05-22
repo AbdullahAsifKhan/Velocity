@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { X, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { toast } from 'sonner'
 import { useCarStore } from '@/lib/store'
 import type { Car } from '@/lib/types'
@@ -72,6 +73,7 @@ export function CompareBar() {
         initial={{ y: shouldReduceMotion ? 0 : 100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: shouldReduceMotion ? 0 : 100, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
         className="fixed bottom-0 left-0 right-0 z-40 p-4"
       >
         <div className="max-w-4xl mx-auto">
@@ -103,13 +105,13 @@ export function CompareBar() {
                       exit={{ scale: shouldReduceMotion ? 1 : 0 }}
                       className="relative flex-shrink-0"
                     >
-                      <div className="w-16 h-16 rounded-xl overflow-hidden border border-border">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={car.image || ''}
+                      <div className="w-16 h-16 relative rounded-xl overflow-hidden border border-border">
+                        <Image
+                          src={car.image as string}
                           alt={car.name}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
+                          fill
+                          sizes="64px"
+                          className="object-cover"
                         />
                       </div>
                       <button

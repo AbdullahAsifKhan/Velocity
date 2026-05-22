@@ -50,6 +50,7 @@ export function CarGrid({ cars, title, subtitle }: CarGridProps) {
               initial={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
               className="text-2xl sm:text-3xl font-bold text-gradient"
             >
               {title}
@@ -60,7 +61,7 @@ export function CarGrid({ cars, title, subtitle }: CarGridProps) {
               initial={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ delay: 0.1 }}
+              transition={{ delay: 0.1, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
               className="mt-2 text-muted-foreground"
             >
               {subtitle}

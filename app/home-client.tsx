@@ -9,6 +9,7 @@ import { CategoryTabs } from '@/components/category-tabs'
 import { CarGrid } from '@/components/car-grid'
 import { TrendingSection } from '@/components/trending-section'
 import { CompareBar } from '@/components/compare-bar'
+import { CarGridSkeleton } from '@/components/loading-skeleton'
 import type { Car } from '@/lib/types'
 import { useCarStore } from '@/lib/store'
 import { Loader2 } from 'lucide-react'
@@ -47,9 +48,6 @@ export function HomeClient({
   }, [initialCars])
 
   useEffect(() => {
-    if (searchQuery !== '') {
-      setSearchQuery('')
-    }
     setMounted(true)
   }, [])
 
@@ -103,10 +101,10 @@ export function HomeClient({
       }
     }
 
-    // Set up observer with 200px margin so it starts fetching *before* hitting the very bottom
+    // Set up observer with 600px margin so it starts fetching well before the user reaches bottom
     observerRef.current = new IntersectionObserver(handleObserver, {
       root: null,
-      rootMargin: '200px',
+      rootMargin: '600px',
       threshold: 0
     })
 
@@ -126,18 +124,18 @@ export function HomeClient({
       {featuredCar && <HeroSection car={featuredCar} />}
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
         {/* Featured Section — server-curated best cars */}
         <TrendingSection cars={featuredCars} />
 
-        {/* Category Filter & All Cars */}
-        <section className="py-24 border-t border-border/40">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
+        <section className="py-12 border-t border-border/30">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
             <div>
               <motion.h2
-                initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
+                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
                 className="text-2xl sm:text-3xl font-bold text-gradient"
               >
                 All Cars
@@ -146,8 +144,8 @@ export function HomeClient({
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: 0.1 }}
-                className="mt-2 text-muted-foreground"
+                transition={{ delay: 0.1, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                className="mt-3 text-muted-foreground text-sm sm:text-base"
               >
                 Explore our complete collection of {totalCars.toLocaleString()} vehicles
               </motion.p>
@@ -169,23 +167,21 @@ export function HomeClient({
 
           <CarGrid cars={cars} />
 
-          {/* Infinite Scroll Trigger & Load More Button */}
+          {/* Infinite Scroll Trigger & Skeleton Loading */}
           {page < totalPages && (
-            <div ref={loadMoreRef} className="mt-12 flex justify-center py-8">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl glass hover:bg-secondary border border-border/40 font-medium transition-all"
-              >
-                {loadingMore ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                    Loading...
-                  </>
-                ) : (
-                  'Load More'
-                )}
-              </button>
+            <div ref={loadMoreRef} className="mt-12">
+              {loadingMore ? (
+                <CarGridSkeleton count={4} />
+              ) : (
+                <div className="flex justify-center py-8">
+                  <button
+                    onClick={handleLoadMore}
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl glass hover:bg-secondary border border-border/40 font-medium transition-all"
+                  >
+                    Load More
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </section>

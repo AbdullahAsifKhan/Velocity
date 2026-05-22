@@ -24,9 +24,9 @@ export default async function BrandPage({
   return (
     <main className="min-h-screen bg-background">
 
-      <div className="pt-24 pb-32">
+      <div className="pt-20 pb-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-12">
+          <div className="mb-8">
             <div className="flex items-center gap-4">
               <div className="w-20 h-20 flex-shrink-0 flex items-center justify-center drop-shadow-lg">
                 <BrandLogo 
