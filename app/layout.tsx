@@ -38,11 +38,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
+        {/* Prevent Wikipedia from blocking images based on referrer */}
+        <meta name="referrer" content="no-referrer" />
         {/* Preconnect to external image sources for faster first-image load */}
-        <link rel="preconnect" href="https://wsrv.nl" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="https://wsrv.nl" />
-        <link rel="preconnect" href="https://raw.githubusercontent.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="https://raw.githubusercontent.com" />
+        <link rel="preconnect" href="https://upload.wikimedia.org" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://upload.wikimedia.org" />
         <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://images.unsplash.com" />
       </head>
