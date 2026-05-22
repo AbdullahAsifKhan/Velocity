@@ -386,7 +386,7 @@ async function _fetchCarsList(options: FetchCarsOptions = {}) {
     const where: any = {
       isCanonical: true,
       modelFamily: { not: null },
-      image: { not: '' },
+      image: { not: { contains: 'placehold.co' } },
     }
 
     // Hide motorcycles/commercial and specific brands from main UI
@@ -627,7 +627,7 @@ async function _fetchCarOfTheDay(): Promise<Partial<Car> | null> {
   try {
     const queryWhere = {
       isCanonical: true,
-      image: { not: '' },
+      image: { not: { contains: 'placehold.co' } },
       horsepower: { gt: 100 },
       type: { notIn: HIDDEN_TYPES },
       brand: { notIn: HIDDEN_BRANDS },
@@ -673,7 +673,7 @@ async function _fetchFeaturedCars(limit = 8): Promise<Partial<Car>[]> {
     const reputedPool = await prisma.car.findMany({
       where: {
         isCanonical: true,
-        image: { not: '' },
+        image: { not: { contains: 'placehold.co' } },
         horsepower: { gt: 250 },
         type: { notIn: HIDDEN_TYPES },
         brand: { notIn: HIDDEN_BRANDS },
