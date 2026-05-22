@@ -21,7 +21,13 @@ export function cleanCarName(name: string, brand?: string): string {
 
 export function optimizeImage(url: string | undefined | null, width = 400) {
   if (!url) return null;
-  return url;
+  if (url.startsWith('/') || url.includes('.svg')) return url;
+  
+  // Clean URL for Photon (remove https://)
+  const cleanUrl = url.replace(/^https?:\/\//, '');
+  
+  // Use WordPress Photon (i0.wp.com) - incredibly fast global CDN that auto-converts to WebP
+  return `https://i0.wp.com/${cleanUrl}?w=${width}&quality=80&strip=all`;
 }
 
 /**
@@ -30,13 +36,9 @@ export function optimizeImage(url: string | undefined | null, width = 400) {
 export function getLQIP(url: string | undefined | null): string | null {
   if (!url) return null;
   if (url.startsWith('/') || url.includes('.svg')) return null;
-  if (url.includes('images.unsplash.com')) {
-    return url.includes('?') 
-      ? `${url}&w=20&q=10&blur=20` 
-      : `${url}?w=20&q=10&blur=20`;
-  }
-  // Remove wsrv.nl - native Next.js Image placeholder="blur" handles this better natively, or we skip LQIP for raw links
-  return null;
+  
+  const cleanUrl = url.replace(/^https?:\/\//, '');
+  return `https://i0.wp.com/${cleanUrl}?w=20&quality=10&blur=20`;
 }
 
 /**
@@ -45,12 +47,9 @@ export function getLQIP(url: string | undefined | null): string | null {
 export function optimizeThumb(url: string | undefined | null, width = 112) {
   if (!url) return null;
   if (url.startsWith('/') || url.includes('.svg')) return url;
-  if (url.includes('images.unsplash.com')) {
-    return url.includes('?') 
-      ? `${url}&w=${width}&q=60` 
-      : `${url}?w=${width}&q=60`;
-  }
-  return url;
+  
+  const cleanUrl = url.replace(/^https?:\/\//, '');
+  return `https://i0.wp.com/${cleanUrl}?w=${width}&quality=60&strip=all`;
 }
 
 export function estimatePerformance(car: Partial<Car>) {
