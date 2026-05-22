@@ -610,7 +610,7 @@ export async function fetchCarsList(options: FetchCarsOptions = {}) {
   // Non-personalized requests are cached
   return unstable_cache(
     async () => _fetchCarsList(options),
-    ['cars-list', String(page), type, query, String(limit)],
+    ['cars-list-v2', String(page), type, query, String(limit)],
     { tags: ['cars-list'], revalidate: 60 }
   )()
 }
@@ -1595,7 +1595,7 @@ async function _fetchCarRelationships(carId: string) {
 export const fetchCarOfTheDay = async () => {
   return unstable_cache(
     async () => _fetchCarOfTheDay(),
-    ['car-of-the-day'],
+    ['car-of-the-day-v2'],
     { tags: ['featured'], revalidate: 1800 }
   )();
 }
@@ -1605,7 +1605,7 @@ export const fetchFeaturedCars = async (limit = 8) => {
   const hourKey = String(Math.floor(Date.now() / 3_600_000));
   return unstable_cache(
     async () => _fetchFeaturedCars(limit),
-    ['featured-cars', String(limit), hourKey],
+    ['featured-cars-v2', String(limit), hourKey],
     { tags: ['featured'], revalidate: 600 }
   )();
 }
