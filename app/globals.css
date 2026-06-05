@@ -181,11 +181,11 @@
 
   /* Card hover lift — GPU-accelerated for buttery smoothness */
   .hover-lift {
-    will-change: transform, box-shadow;
     transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
                 box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .hover-lift:hover {
+    will-change: transform, box-shadow;
     transform: translateY(-8px) scale(1.015);
     box-shadow: 0 20px 40px oklch(0 0 0 / 0.3), 0 0 24px var(--glow);
   }
@@ -208,7 +208,6 @@
     }
   }
   .animate-fade-in-up {
-    will-change: transform, opacity;
     animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
@@ -266,6 +265,11 @@
     content-visibility: auto;
     contain-intrinsic-size: auto 400px;
     contain: layout style paint;
+  }
+
+  /* ── Section Spacing ───────────────────────────────────────────────────── */
+  .section-gap {
+    @apply py-12 lg:py-20;
   }
 
   /* ── Skeleton card shape ───────────────────────────────────────────────── */

@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2, AlertTriangle, Car as CarIcon, Flag, Star } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2, AlertTriangle, Car as CarIcon, Flag, Star, Warehouse } from 'lucide-react'
 import { useCarStore } from '@/lib/store'
 import type { Car } from '@/lib/types'
 import { cn, optimizeImage } from '@/lib/utils'
 import { ReportErrorModal } from './report-error-modal'
+import { ShareModal } from './share-modal'
 import Image from 'next/image'
 
 export function CarGallery({ car }: { car: Car }) {
@@ -90,7 +91,6 @@ export function CarGallery({ car }: { car: Car }) {
                   fill
                   priority
                   sizes="(max-width: 1024px) 100vw, 50vw"
-                  unoptimized={true}
                   referrerPolicy="no-referrer"
                   className="object-cover"
                   onError={() => handleImageError(selectedImage)}
@@ -134,35 +134,32 @@ export function CarGallery({ car }: { car: Car }) {
 
       {gallery.length > 1 && (
         <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none snap-x mask-fade-edges">
-          {gallery.map((img, index) => (
-            <button
-              key={index}
-              onClick={() => setSelectedImage(index)}
-              className={cn(
-                "relative flex-shrink-0 w-32 aspect-video rounded-xl overflow-hidden border-2 transition-all",
-                selectedImage === index
-                  ? "border-primary glow-sm"
-                  : "border-transparent opacity-60 hover:opacity-100"
-              )}
-            >
-              {imgErrors.has(index) ? (
-                <div className="absolute inset-0 bg-secondary flex items-center justify-center">
-                  <CarIcon className="w-6 h-6 text-muted-foreground/40" />
-                </div>
-              ) : (
+          {gallery.map((img, index) => {
+            if (imgErrors.has(index)) return null;
+            
+            return (
+              <button
+                key={index}
+                onClick={() => setSelectedImage(index)}
+                className={cn(
+                  "relative flex-shrink-0 w-32 aspect-video rounded-xl overflow-hidden border-2 transition-all",
+                  selectedImage === index
+                    ? "border-primary glow-sm"
+                    : "border-transparent opacity-60 hover:opacity-100"
+                )}
+              >
                 <Image
                   src={img as string}
                   alt={`${car.name} view ${index + 1}`}
                   fill
                   sizes="128px"
-                  unoptimized={true}
                   referrerPolicy="no-referrer"
                   className="object-cover"
                   onError={() => handleImageError(index)}
                 />
-              )}
-            </button>
-          ))}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -172,11 +169,15 @@ export function CarGallery({ car }: { car: Car }) {
 export function CarActions({ car }: { car: Car }) {
   const favorites = useCarStore((s) => s.favorites)
   const compareList = useCarStore((s) => s.compareList)
+  const garage = useCarStore((s) => s.garage)
+  const addToCollection = useCarStore((s) => s.addToCollection)
   const toggleFavorite = useCarStore((s) => s.toggleFavorite)
   const addToCompare = useCarStore((s) => s.addToCompare)
   const removeFromCompare = useCarStore((s) => s.removeFromCompare)
   
   const [mounted, setMounted] = useState(false)
+  const [showGarageMenu, setShowGarageMenu] = useState(false)
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -212,10 +213,65 @@ export function CarActions({ car }: { car: Car }) {
           {inCompare ? 'In Compare' : 'Compare'}
         </motion.button>
         
-        <button className="p-3 rounded-xl glass hover:bg-secondary transition-colors">
+        <div className="relative">
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowGarageMenu(!showGarageMenu)}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold glass hover:bg-secondary transition-all"
+          >
+            <Warehouse className="w-5 h-5" />
+            Add to Garage
+          </motion.button>
+          
+          <AnimatePresence>
+            {showGarageMenu && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="absolute top-full left-0 mt-2 w-64 rounded-xl bg-card border border-border shadow-xl overflow-hidden z-20"
+              >
+                {garage.length > 0 ? (
+                  <div className="max-h-60 overflow-y-auto">
+                    {garage.map(collection => (
+                      <button
+                        key={collection.id}
+                        onClick={() => {
+                          addToCollection(collection.id, car.id)
+                          setShowGarageMenu(false)
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-secondary transition-colors border-b border-border/50 last:border-0 flex items-center justify-between"
+                      >
+                        <span className="truncate pr-2">{collection.name}</span>
+                        {collection.carIds.includes(car.id) && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 text-sm text-muted-foreground text-center">
+                    No collections yet. Create one in your Garage.
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setIsShareModalOpen(true)}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold glass hover:bg-secondary transition-all"
+        >
           <Share2 className="w-5 h-5" />
-        </button>
+          Share
+        </motion.button>
       </div>
+
+      <ShareModal 
+        isOpen={isShareModalOpen} 
+        onClose={() => setIsShareModalOpen(false)} 
+        car={car} 
+      />
     </>
   )
 }
@@ -253,6 +309,10 @@ export function CarRating({ carId, initialRating }: { carId: string, initialRati
   const handleRate = async (value: number) => {
     if (isSubmitting) return
     setIsSubmitting(true)
+    
+    // Optimistic UI update so it works for the user immediately
+    setRating(value)
+    
     try {
       const res = await fetch(`/api/cars/${carId}/rate`, {
         method: 'POST',
