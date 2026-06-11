@@ -1,14 +1,17 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Heart, Plus, Check, Share2, AlertTriangle, Car as CarIcon, Flag, Star, Warehouse } from 'lucide-react'
 import { useCarStore } from '@/lib/store'
 import type { Car } from '@/lib/types'
 import { cn, optimizeImage } from '@/lib/utils'
 import { ReportErrorModal } from './report-error-modal'
-import { ShareModal } from './share-modal'
+import dynamic from 'next/dynamic'
 import Image from 'next/image'
+
+// Heavy component — only loaded when user clicks share
+const ShareModal = dynamic(() => import('@/components/share-modal').then(m => ({ default: m.ShareModal })), { ssr: false })
 
 export function CarGallery({ car }: { car: Car }) {
   const [selectedImage, setSelectedImage] = useState(0)
@@ -183,6 +186,24 @@ export function CarActions({ car }: { car: Car }) {
     setMounted(true)
   }, [])
 
+  const menuRef = useRef<HTMLDivElement>(null)
+  
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowGarageMenu(false)
+      }
+    }
+    
+    if (showGarageMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showGarageMenu])
+
   const favorite = mounted && favorites.includes(car.id)
   const inCompare = mounted && compareList.includes(car.id)
 
@@ -213,7 +234,7 @@ export function CarActions({ car }: { car: Car }) {
           {inCompare ? 'In Compare' : 'Compare'}
         </motion.button>
         
-        <div className="relative">
+        <div className="relative" ref={menuRef}>
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowGarageMenu(!showGarageMenu)}

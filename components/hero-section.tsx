@@ -6,7 +6,7 @@ import { ArrowRight, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Car } from '@/lib/types'
-import { optimizeImage, cleanCarName, getLQIP } from '@/lib/utils'
+import { cleanCarName, getLQIP } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 interface HeroSectionProps {
@@ -32,9 +32,8 @@ export function HeroSection({ car: featuredCar }: HeroSectionProps) {
 
   const hasStats = hasValue(featuredCar.horsepower) || hasValue(featuredCar.acceleration) || hasValue(featuredCar.topSpeed)
   // Always proxy through wsrv.nl — avoids next/image unconfigured-host errors
-  const rawImage = featuredCar.image || null
-  const heroImage = rawImage ? optimizeImage(rawImage, 1600) : null
-  const lqip = getLQIP(rawImage)
+  const heroImage = featuredCar.image || null
+  const lqip = getLQIP(heroImage)
 
   const handleImageLoad = useCallback(() => {
     setImgLoaded(true)
@@ -64,8 +63,8 @@ export function HeroSection({ car: featuredCar }: HeroSectionProps) {
                 alt={featuredCar.name}
                 fill
                 priority
+                fetchPriority="high"
                 sizes="100vw"
-                unoptimized={true}
                 className={cn(
                   "object-cover z-[2]",
                   "img-reveal",

@@ -1,12 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef, memo, useCallback } from 'react'
-import { Heart, Plus, Zap, Fuel, Gauge, Check, Car as CarIcon } from 'lucide-react'
+import { Heart, Plus, Zap, Fuel, Gauge, Check, Car as CarIcon, Share2 } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useCarStore } from '@/lib/store'
 import { cn, estimatePerformance, estimatePrice, optimizeImage, cleanCarName, getLQIP } from '@/lib/utils'
 import type { Car } from '@/lib/types'
+import dynamic from 'next/dynamic'
+
+// Heavy component — only loaded when user clicks share (31KB saved from initial bundle)
+const ShareModal = dynamic(() => import('@/components/share-modal').then(m => ({ default: m.ShareModal })), { ssr: false })
 
 // ── Batched impression tracker (module-level singleton) ──────────────────────
 let _impressionBatch: string[] = []
@@ -68,6 +72,7 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
   const [imgFallbackIdx, setImgFallbackIdx] = useState(0)
   const [imgFailed, setImgFailed] = useState(false)
   const [imgLoaded, setImgLoaded] = useState(false)
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
   // Build image candidates: primary image first, then gallery images (deduped)
@@ -142,7 +147,7 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
         {/* Image Container */}
         <Link 
           href={`/car/${car.id}`}
-          prefetch={true}
+          prefetch={false}
           onClick={handleCardClick}
           className="relative aspect-[4/3] overflow-hidden bg-secondary block"
         >
@@ -161,8 +166,8 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
                 alt={car.name || 'Car'}
                 fill
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                priority={index < 4}
-                unoptimized={true}
+                priority={index < 2}
+                loading={index < 2 ? undefined : 'lazy'}
                 className={cn(
                   "object-cover transition-transform duration-700 ease-out group-hover:scale-105 z-[2]",
                   "img-reveal",
@@ -187,9 +192,10 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
         </Link>
 
         {/* Action Buttons */}
-        <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
           <button
-            onClick={() => toggleFavorite(car.id)}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(car.id) }}
+            aria-label={favorite ? 'Remove from favorites' : 'Add to favorites'}
             className={cn(
               "p-2.5 rounded-full backdrop-blur-xl transition-all active:scale-90",
               favorite ? "bg-red-500 text-white" : "glass hover:bg-secondary"
@@ -198,13 +204,21 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
             <Heart className={cn("w-4 h-4", favorite && "fill-current")} />
           </button>
           <button
-            onClick={() => inCompare ? removeFromCompare(car.id) : addToCompare(car.id)}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); inCompare ? removeFromCompare(car.id) : addToCompare(car.id) }}
+            aria-label={inCompare ? 'Remove from comparison' : 'Add to comparison'}
             className={cn(
               "p-2.5 rounded-full backdrop-blur-xl transition-all active:scale-90",
               inCompare ? "bg-primary text-primary-foreground" : "glass hover:bg-secondary"
             )}
           >
             {inCompare ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsShareModalOpen(true) }}
+            aria-label="Share car"
+            className="p-2.5 rounded-full backdrop-blur-xl transition-all active:scale-90 glass hover:bg-secondary"
+          >
+            <Share2 className="w-4 h-4" />
           </button>
         </div>
 
@@ -221,7 +235,7 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
                   </>
                 )}
               </p>
-              <Link href={`/car/${car.id}`} prefetch={true} onClick={handleCardClick}>
+              <Link href={`/car/${car.id}`} prefetch={false} onClick={handleCardClick}>
                 <h3 className="mt-1.5 text-lg font-semibold leading-tight hover:text-primary transition-colors duration-300 line-clamp-1">
                   {cleanCarName(car.name, car.brand)}
                 </h3>
@@ -260,6 +274,11 @@ export const CarCard = memo(function CarCard({ car, index = 0, disableHoverLift 
           </div>
         </div>
       </div>
+      <ShareModal 
+        isOpen={isShareModalOpen} 
+        onClose={() => setIsShareModalOpen(false)} 
+        car={car} 
+      />
     </div>
   )
 })
