@@ -92,6 +92,7 @@ export function Navigation() {
               {/* Search button with Ctrl+K hint */}
               <button
                 onClick={() => setIsSearchOpen(true)}
+                aria-label="Search cars"
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/60 border border-border/40 hover:bg-secondary transition-colors text-sm text-muted-foreground group"
               >
                 <Search className="w-4 h-4" />
@@ -117,12 +118,15 @@ export function Navigation() {
             <div className="flex lg:hidden items-center gap-1">
               <button
                 onClick={() => setIsSearchOpen(true)}
+                aria-label="Search"
                 className="p-2 rounded-lg hover:bg-secondary transition-colors"
               >
                 <Search className="w-5 h-5" />
               </button>
               <button
                 onClick={() => setIsOpen(!isOpen)}
+                aria-label={isOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={isOpen}
                 className="p-2 rounded-lg hover:bg-secondary transition-colors"
               >
                 {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}

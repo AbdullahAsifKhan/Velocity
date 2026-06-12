@@ -4,16 +4,19 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Shuffle } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { HeroSection } from '@/components/hero-section'
 import { CategoryTabs } from '@/components/category-tabs'
 import { CarGrid } from '@/components/car-grid'
-import { TrendingSection } from '@/components/trending-section'
-import { CompareBar } from '@/components/compare-bar'
 import { CarGridSkeleton } from '@/components/loading-skeleton'
 import type { Car } from '@/lib/types'
 import { useCarStore } from '@/lib/store'
 import { Loader2 } from 'lucide-react'
 import { loadMoreCars } from './actions'
+
+// Heavy components loaded after initial render
+const TrendingSection = dynamic(() => import('@/components/trending-section').then(m => ({ default: m.TrendingSection })), { ssr: true })
+const CompareBar = dynamic(() => import('@/components/compare-bar').then(m => ({ default: m.CompareBar })), { ssr: false })
 
 export function HomeClient({ 
   initialCars, 
@@ -128,7 +131,7 @@ export function HomeClient({
         {/* Featured Section — server-curated best cars */}
         <TrendingSection cars={featuredCars} />
 
-        <section className="py-12 border-t border-border/30">
+        <section className="section-gap border-t border-border/30">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
             <div>
               <motion.h2

@@ -30,7 +30,7 @@ export function TrendingSection({ cars }: TrendingSectionProps) {
   if (!cars || cars.length === 0) return null
 
   return (
-    <section className="py-20">
+    <section className="section-gap">
       <div className="flex items-end justify-between mb-8">
         <div>
           <motion.div
@@ -65,12 +65,14 @@ export function TrendingSection({ cars }: TrendingSectionProps) {
         <div className="hidden sm:flex items-center gap-2">
           <button
             onClick={() => scroll('left')}
+            aria-label="Scroll featured cars left"
             className="p-3 rounded-xl glass hover:bg-secondary transition-all duration-300 hover:scale-105 active:scale-95"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
           <button
             onClick={() => scroll('right')}
+            aria-label="Scroll featured cars right"
             className="p-3 rounded-xl glass hover:bg-secondary transition-all duration-300 hover:scale-105 active:scale-95"
           >
             <ChevronRight className="w-5 h-5" />
