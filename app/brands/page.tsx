@@ -4,7 +4,18 @@ import { CompareBar } from '@/components/compare-bar'
 import { BrandLogo } from '@/components/brand-logo'
 import { fetchBrandStats } from '@/lib/api-service'
 
+import { Metadata } from 'next'
+
 export const revalidate = 3600 // ISR: revalidate every hour
+
+export const metadata: Metadata = {
+  title: 'All Brands',
+  description: 'Explore our comprehensive collection of premium automotive brands. Find luxury cars, sports cars, and high-performance vehicles from top manufacturers worldwide.',
+  openGraph: {
+    title: 'All Brands | VELOCITY',
+    description: 'Explore our comprehensive collection of premium automotive brands.',
+  },
+}
 
 export default async function BrandsPage() {
   const brandStats = await fetchBrandStats()

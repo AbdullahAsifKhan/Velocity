@@ -5,8 +5,31 @@ import { ModelGrid } from '@/components/model-grid'
 import { CompareBar } from '@/components/compare-bar'
 import { BrandLogo } from '@/components/brand-logo'
 import { fetchBrandModelFamilies } from '@/lib/api-service'
+import { Metadata } from 'next'
 
 export const revalidate = 3600 // ISR: revalidate every hour
+
+export async function generateMetadata({ params }: { params: Promise<{ brand: string }> }): Promise<Metadata> {
+  const { brand } = await params
+  const brandName = decodeURIComponent(brand)
+  
+  const title = `${brandName} Models`
+  const description = `Explore the complete lineup of ${brandName} vehicles. View model families, technical specifications, and historical generations.`
+  
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description,
+    }
+  }
+}
 
 export default async function BrandPage({
   params,

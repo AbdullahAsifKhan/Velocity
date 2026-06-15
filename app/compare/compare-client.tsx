@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Car } from '@/lib/types'
 import { useCarStore } from '@/lib/store'
-import { cn } from '@/lib/utils'
+import { cn, estimatePerformance, estimatePrice } from '@/lib/utils'
 
 const comparisonSpecs = [
   { key: 'price', label: 'Price', icon: DollarSign, format: (v: number) => `$${v.toLocaleString('en-US')}` },
@@ -71,7 +71,13 @@ export function CompareClient() {
     const numericValues: number[] = []
 
     for (const car of selectedCars) {
-      const value = car[key as keyof Car]
+      let value: any = car[key as keyof Car]
+      if (key === 'price') value = estimatePrice(car)
+      else if (key === 'horsepower') value = estimatePerformance(car).hp
+      else if (key === 'torque') value = estimatePerformance(car).torque
+      else if (key === 'acceleration') value = estimatePerformance(car).accel
+      else if (key === 'topSpeed') value = estimatePerformance(car).topSpeed
+
       if (typeof value === 'number') {
         numericValues.push(value)
       } else {
@@ -196,7 +202,14 @@ export function CompareClient() {
                         </div>
 
                         {selectedCars.map((car, index) => {
-                          const value = car[spec.key as keyof Car]
+                          let value: any = car[spec.key as keyof Car]
+                          if (spec.key === 'price') value = estimatePrice(car)
+                          else if (spec.key === 'horsepower') value = estimatePerformance(car).hp
+                          else if (spec.key === 'torque') value = estimatePerformance(car).torque
+                          else if (spec.key === 'acceleration') value = estimatePerformance(car).accel
+                          else if (spec.key === 'topSpeed') value = estimatePerformance(car).topSpeed
+                          else if (!value) value = '—'
+
                           const isWinner = winner === index
 
                           return (
