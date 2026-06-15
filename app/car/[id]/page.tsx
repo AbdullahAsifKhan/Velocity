@@ -32,9 +32,37 @@ import { CompareBar } from '@/components/compare-bar'
 import { RelatedModels } from '@/components/related-models'
 import { fetchCarById, fetchSimilarCars, fetchModelHierarchy, fetchCarRelationships, extractModelFamily } from '@/lib/api-service'
 import { CarGallery, CarActions, ReportIssueButton, CarRating } from '@/components/car-details-client'
-import { estimatePerformance, estimatePrice } from '@/lib/utils'
+import { estimatePerformance, estimatePrice, sanitizeSpec } from '@/lib/utils'
+
+import { Metadata } from 'next'
 
 export const revalidate = 3600 // Cache page for 1 hour (ISR)
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params
+  const car = await fetchCarById(id)
+  
+  if (!car) return {}
+
+  const title = `${car.brand} ${car.name}`
+  const description = car.description || `Explore the ${title}. Detailed specifications, performance metrics, and pricing.`
+  
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: car.image ? [{ url: car.image }] : [],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: car.image ? [car.image] : [],
+    }
+  }
+}
 
 export default async function CarDetailsPage({
   params,
@@ -61,7 +89,7 @@ export default async function CarDetailsPage({
     { label: 'Facelift Year', value: car.faceliftYear ? String(car.faceliftYear) : null },
     { label: 'Body Style',    value: car.bodyStyle },
     { label: 'Variant Type',  value: car.variantType ? car.variantType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : null },
-  ].filter(s => s.value)
+  ].map(s => ({ ...s, value: sanitizeSpec(s.value) })).filter(s => s.value)
 
   const powertrain = [
     { label: 'Engine',        value: car.engine },
@@ -71,7 +99,7 @@ export default async function CarDetailsPage({
     { label: 'Tank Capacity', value: car.fuelTankCapacity },
     { label: 'Mileage',       value: car.mileage },
     { label: 'Emissions',     value: car.emissions },
-  ].filter(s => s.value)
+  ].map(s => ({ ...s, value: sanitizeSpec(s.value) })).filter(s => s.value)
 
   const chassis = [
     { label: 'Seats',            value: car.seats != null ? String(car.seats) : null },
@@ -82,7 +110,7 @@ export default async function CarDetailsPage({
     { label: 'Height',           value: car.height != null ? `${car.height.toLocaleString()} mm` : null },
     { label: 'Wheelbase',        value: car.wheelbase != null ? `${car.wheelbase.toLocaleString()} mm` : null },
     { label: 'Ground Clearance', value: car.groundClearance != null ? `${car.groundClearance} mm` : null },
-  ].filter(s => s.value)
+  ].map(s => ({ ...s, value: sanitizeSpec(s.value) })).filter(s => s.value)
 
   const handling = [
     { label: 'Aerodynamics', value: car.aerodynamics },
@@ -90,18 +118,18 @@ export default async function CarDetailsPage({
     { label: 'Brakes',       value: car.brakes },
     { label: 'Tires',        value: car.tires },
     { label: 'Drive Modes',  value: car.driveModes },
-  ].filter(s => s.value)
+  ].map(s => ({ ...s, value: sanitizeSpec(s.value) })).filter(s => s.value)
 
   const techSafety = [
     { label: 'Infotainment',    value: car.infotainment },
     { label: 'Safety Features', value: car.safetyFeatures },
-  ].filter(s => s.value)
+  ].map(s => ({ ...s, value: sanitizeSpec(s.value) })).filter(s => s.value)
 
   const provenance = [
     { label: 'Country',      value: car.country },
     { label: 'Launch Date',  value: car.launchDate },
     { label: 'Model Year',   value: String(car.year) },
-  ].filter(s => s.value)
+  ].map(s => ({ ...s, value: sanitizeSpec(s.value) })).filter(s => s.value)
 
   // ── Spec section component ─────────────────────────────────────────────────
   const SpecGrid = ({
@@ -112,22 +140,51 @@ export default async function CarDetailsPage({
     specs: { label: string; value?: string | null }[]
   }) =>
     specs.length === 0 ? null : (
-      <div className="mb-10">
+      <div>
         <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3 pb-2 border-b border-border/40">{title}</h3>
         <dl className="divide-y divide-border/30">
           {specs.map((spec) => (
             <div key={spec.label} className="grid grid-cols-[180px_1fr] py-2.5 gap-4">
               <dt className="text-sm text-muted-foreground flex-shrink-0">{spec.label}</dt>
-              <dd className="text-sm font-medium text-foreground leading-relaxed">{spec.value}</dd>
+              <dd className="text-sm font-medium text-foreground leading-relaxed break-words" title={spec.value || ''}>{spec.value}</dd>
             </div>
           ))}
         </dl>
       </div>
     )
 
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Vehicle',
+    name: car.name,
+    brand: {
+      '@type': 'Brand',
+      name: car.brand,
+    },
+    description: car.description,
+    image: car.image,
+    offers: {
+      '@type': 'Offer',
+      price: car.price > 0 ? car.price : estimatePrice(car),
+      priceCurrency: 'USD',
+    },
+    vehicleConfiguration: car.bodyStyle || car.type,
+    vehicleEngine: {
+      '@type': 'EngineSpecification',
+      enginePower: {
+        '@type': 'QuantitativeValue',
+        value: car.horsepower,
+        unitCode: 'N12' // bhp
+      }
+    }
+  }
+
   return (
     <main className="min-h-screen bg-background">
-
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <div className="pt-20">
         {/* Breadcrumb */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -252,12 +309,14 @@ export default async function CarDetailsPage({
         {/* Full Technical Specifications */}
         <section className="section-gap max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl sm:text-3xl font-bold text-gradient mb-8">Technical Specifications</h2>
-          <SpecGrid title="Taxonomy & Lineage" specs={taxonomy} />
-          <SpecGrid title="Powertrain & Economy" specs={powertrain} />
-          <SpecGrid title="Dimensions & Chassis" specs={chassis} />
-          <SpecGrid title="Handling" specs={handling} />
-          <SpecGrid title="Technology & Safety" specs={techSafety} />
-          <SpecGrid title="Provenance" specs={provenance} />
+          <div className="grid lg:grid-cols-2 gap-x-12 gap-y-12">
+            <SpecGrid title="Taxonomy & Lineage" specs={taxonomy} />
+            <SpecGrid title="Powertrain & Economy" specs={powertrain} />
+            <SpecGrid title="Dimensions & Chassis" specs={chassis} />
+            <SpecGrid title="Handling" specs={handling} />
+            <SpecGrid title="Technology & Safety" specs={techSafety} />
+            <SpecGrid title="Provenance" specs={provenance} />
+          </div>
         </section>
 
         {/* Model Trim Grid — All generations of this model family */}
@@ -377,7 +436,7 @@ export default async function CarDetailsPage({
                 )
               )}
             </div>
-            <p className="mt-4 text-[10px] text-muted-foreground/60 max-w-2xl leading-relaxed">
+            <p className="mt-4 text-[10px] text-muted-foreground/60 leading-relaxed">
               Vehicle specifications and imagery are aggregated from public repositories including Wikipedia, the National Highway Traffic Safety Administration (NHTSA), and API-Ninjas. We strongly recommend verifying with official manufacturer documentation before purchasing decisions inside the application.
             </p>
           </div>

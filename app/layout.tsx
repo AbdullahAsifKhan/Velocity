@@ -18,10 +18,29 @@ const geistMono = Geist_Mono({
   display: 'swap',
 })
 
+const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://velocity-cars.vercel.app'
+
 export const metadata: Metadata = {
-  title: 'VELOCITY | Premium Car Showcase',
+  metadataBase: new URL(baseUrl),
+  title: {
+    default: 'VELOCITY | Premium Car Showcase',
+    template: '%s | VELOCITY'
+  },
   description: 'Discover the world\'s finest automobiles. Explore luxury, performance, and innovation in one stunning collection.',
   keywords: ['cars', 'luxury cars', 'sports cars', 'automotive', 'car showcase', 'premium vehicles'],
+  openGraph: {
+    title: 'VELOCITY | Premium Car Showcase',
+    description: 'Discover the world\'s finest automobiles. Explore luxury, performance, and innovation in one stunning collection.',
+    url: baseUrl,
+    siteName: 'VELOCITY',
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'VELOCITY | Premium Car Showcase',
+    description: 'Discover the world\'s finest automobiles.',
+  },
 }
 
 export const viewport: Viewport = {
@@ -40,17 +59,21 @@ export default function RootLayout({
       <head>
         {/* Prevent Wikipedia from blocking images based on referrer */}
         <meta name="referrer" content="no-referrer" />
-        {/* Preconnect to external image sources for faster first-image load */}
-        <link rel="preconnect" href="https://upload.wikimedia.org" crossOrigin="anonymous" />
+        {/* Preconnect to Cloudinary CDN (primary image source) for faster LCP */}
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://res.cloudinary.com" />
+        {/* Fallback image proxy */}
+        <link rel="preconnect" href="https://wsrv.nl" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://wsrv.nl" />
+        {/* External image sources */}
         <link rel="dns-prefetch" href="https://upload.wikimedia.org" />
-        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://images.unsplash.com" />
       </head>
-      <body className={`${outfit.variable} ${geistMono.variable} font-sans antialiased`}>
+      <body className={`${outfit.variable} ${geistMono.variable} font-sans antialiased flex flex-col min-h-screen`}>
         <Navigation />
         {children}
         <footer className="mt-auto py-12 border-t border-border/40 text-center">
-          <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} Velocity Automotive. All rights reserved.</p>
+          <p suppressHydrationWarning className="text-sm text-muted-foreground">© {new Date().getFullYear()} Velocity Automotive. All rights reserved.</p>
         </footer>
         <Analytics />
         <Toaster position="bottom-right" theme="dark" />
