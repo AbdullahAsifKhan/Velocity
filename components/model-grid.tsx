@@ -78,7 +78,6 @@ function ModelCard({ model, brand, imageUrl, index }: { model: ModelFamily; bran
               alt={model.modelName}
               fill
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-              unoptimized={true}
               referrerPolicy="no-referrer"
               className={cn(
                 "object-cover transition-transform duration-700 group-hover:scale-105 z-[2] relative",

@@ -14,7 +14,7 @@ const globalForPrisma = globalThis as unknown as {
 export const prisma = globalForPrisma.prisma ?? new PrismaClient()
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
-// ── Common select shape (lightweight for list views) ─────────────────────────
+// ── Lightweight select for grid/list views (no description, no gallery) ──────
 const CAR_LIST_SELECT = {
   id: true,
   name: true,
@@ -34,7 +34,6 @@ const CAR_LIST_SELECT = {
   views: true,
   favorites: true,
   featured: true,
-  description: true,
   drivetrain: true,
   seats: true,
   weight: true,
@@ -47,6 +46,13 @@ const CAR_LIST_SELECT = {
   blendedScore: true,
   isDemoted: true,
   officialPageUrl: true,
+  priceNote: true,
+} as const
+
+// ── Full select for detail/taxonomy views (includes gallery + taxonomy) ──────
+const CAR_DETAIL_SELECT = {
+  ...CAR_LIST_SELECT,
+  description: true,
   // Council Taxonomy fields
   generation: true,
   generationStart: true,
@@ -190,9 +196,6 @@ export function mapPrismaCar(raw: any): Car {
       galleryUrls.push(originalImage)
     }
   }
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[mapPrismaCar] ${raw.id} gallery size: ${galleryUrls.length}`, galleryUrls)
-  }
 
   // Remap 'Discontinued' for exotic/premium cars
   let priceNote = raw.priceNote
@@ -205,6 +208,7 @@ export function mapPrismaCar(raw: any): Car {
 
   return {
     ...raw,
+    description: raw.description ?? '',
     priceNote,
     image: resolvedImage,
     images: sortedGallery, // Ensure full objects are passed to UI
@@ -385,8 +389,8 @@ async function _fetchCarsList(options: FetchCarsOptions = {}) {
   try {
     const where: any = {
       isCanonical: true,
-      modelFamily: { not: null },
-      image: { not: { contains: 'placehold.co' } },
+      image: { not: '' },
+      NOT: { image: { contains: 'placehold.co' } },
     }
 
     // Hide motorcycles/commercial and specific brands from main UI
@@ -532,7 +536,7 @@ async function _fetchCarsList(options: FetchCarsOptions = {}) {
     }
 
     // Epsilon-greedy exploration: replace ~10% of slots with random picks
-    // Uses lightweight count + random offset instead of fetching 500 rows
+    // Uses a single batch query instead of N individual queries
     const explorationSlots = Math.max(1, Math.floor(limit * EXPLORATION_RATE))
     if (!query && page <= 3 && finalCars.length >= limit) {
       try {
@@ -544,23 +548,17 @@ async function _fetchCarsList(options: FetchCarsOptions = {}) {
         const exploreCount = await prisma.car.count({ where: exploreWhere })
 
         if (exploreCount > 0) {
-          const picks: typeof cars = []
-          const usedOffsets = new Set<number>()
           const slotsToFill = Math.min(explorationSlots, exploreCount)
-
-          for (let i = 0; i < slotsToFill; i++) {
-            let offset: number
-            do { offset = Math.floor(Math.random() * exploreCount) } while (usedOffsets.has(offset))
-            usedOffsets.add(offset)
-            const [car] = await prisma.car.findMany({
-              where: exploreWhere,
-              orderBy: { id: 'asc' },
-              select: CAR_LIST_SELECT,
-              skip: offset,
-              take: 1,
-            })
-            if (car) picks.push(car)
-          }
+          // Pick a single random offset and grab a batch in one query
+          const maxOffset = Math.max(0, exploreCount - slotsToFill)
+          const randomOffset = Math.floor(Math.random() * (maxOffset + 1))
+          const picks = await prisma.car.findMany({
+            where: exploreWhere,
+            orderBy: { id: 'asc' },
+            select: CAR_LIST_SELECT,
+            skip: randomOffset,
+            take: slotsToFill,
+          })
 
           if (picks.length > 0) {
             // Replace the last N slots with exploration picks
@@ -627,7 +625,8 @@ async function _fetchCarOfTheDay(): Promise<Partial<Car> | null> {
   try {
     const queryWhere = {
       isCanonical: true,
-      image: { not: { contains: 'placehold.co' } },
+      image: { not: '' },
+      NOT: { image: { contains: 'placehold.co' } },
       horsepower: { gt: 100 },
       type: { notIn: HIDDEN_TYPES },
       brand: { notIn: HIDDEN_BRANDS },
@@ -635,11 +634,12 @@ async function _fetchCarOfTheDay(): Promise<Partial<Car> | null> {
       name: { not: { contains: 'concept vehicles' } },
     };
 
-    // Fetch the top 365 best cars based on blendedScore to ensure high quality recommendations
+    // Fetch a smaller pool — 100 is enough for daily rotation with prime shuffling
     const pool = await prisma.car.findMany({
       where: queryWhere,
       orderBy: [{ blendedScore: 'desc' }, { popularityScore: 'desc' }, { horsepower: 'desc' }],
-      take: 365,
+      select: CAR_LIST_SELECT,
+      take: 100,
     })
 
     if (pool.length === 0) return null
@@ -669,37 +669,40 @@ async function _fetchCarOfTheDay(): Promise<Partial<Car> | null> {
  */
 async function _fetchFeaturedCars(limit = 8): Promise<Partial<Car>[]> {
   try {
-    // Fetch a pool of highly reputed candidates
-    const reputedPool = await prisma.car.findMany({
-      where: {
-        isCanonical: true,
-        image: { not: { contains: 'placehold.co' } },
-        horsepower: { gt: 250 },
-        type: { notIn: HIDDEN_TYPES },
-        brand: { notIn: HIDDEN_BRANDS },
-        isDemoted: false,
-        name: { not: { contains: 'concept vehicles' } },
-      },
-      orderBy: [{ blendedScore: 'desc' }, { popularityScore: 'desc' }, { horsepower: 'desc' }],
-      select: CAR_LIST_SELECT,
-      take: 100,
-    })
-
-    // Fetch a pool of normal, everyday candidates
-    const normalPool = await prisma.car.findMany({
-      where: {
-        isCanonical: true,
-        image: { not: '' },
-        horsepower: { gt: 90, lte: 250 },
-        type: { in: ['Sedan', 'Hatchback', 'SUV', 'Wagon', 'Crossover'] },
-        brand: { notIn: HIDDEN_BRANDS },
-        isDemoted: false,
-        name: { not: { contains: 'concept vehicles' } },
-      },
-      orderBy: [{ popularityScore: 'desc' }, { blendedScore: 'desc' }],
-      select: CAR_LIST_SELECT,
-      take: 100,
-    })
+    // Run both pool queries in parallel to cut cold-start time in half
+    const [reputedPool, normalPool] = await Promise.all([
+      // Highly reputed candidates (supercars, luxury, performance)
+      prisma.car.findMany({
+        where: {
+          isCanonical: true,
+          image: { not: '' },
+          NOT: { image: { contains: 'placehold.co' } },
+          horsepower: { gt: 250 },
+          type: { notIn: HIDDEN_TYPES },
+          brand: { notIn: HIDDEN_BRANDS },
+          isDemoted: false,
+          name: { not: { contains: 'concept vehicles' } },
+        },
+        orderBy: [{ blendedScore: 'desc' }, { popularityScore: 'desc' }, { horsepower: 'desc' }],
+        select: CAR_LIST_SELECT,
+        take: 50,
+      }),
+      // Normal, everyday candidates (sedans, SUVs, etc.)
+      prisma.car.findMany({
+        where: {
+          isCanonical: true,
+          image: { not: '' },
+          horsepower: { gt: 90, lte: 250 },
+          type: { in: ['Sedan', 'Hatchback', 'SUV', 'Wagon', 'Crossover'] },
+          brand: { notIn: HIDDEN_BRANDS },
+          isDemoted: false,
+          name: { not: { contains: 'concept vehicles' } },
+        },
+        orderBy: [{ popularityScore: 'desc' }, { blendedScore: 'desc' }],
+        select: CAR_LIST_SELECT,
+        take: 50,
+      }),
+    ])
 
     const deduplicate = (pool: any[]) => {
       const map = new Map();
@@ -816,13 +819,13 @@ async function _fetchBrandCars(brandName: string): Promise<{
   try {
     // Count total variants for display
     const totalVariants = await prisma.car.count({
-      where: { brand: brandName },
+      where: { brand: brandName, isDemoted: false },
     })
 
     // Get one ID per unique model name, enforce canonical deduplication
     const grouped = await prisma.car.groupBy({
       by: ['name'],
-      where: { brand: brandName, isCanonical: true, isDemoted: false },
+      where: { brand: brandName, isDemoted: false, image: { not: '' } },
       _max: { id: true, year: true, horsepower: true, popularityScore: true },
     })
 
@@ -950,6 +953,7 @@ export async function searchCarsFullPage(query: string): Promise<Partial<Car>[]>
       },
       select: CAR_LIST_SELECT,
       orderBy: [{ popularityScore: 'desc' }, { horsepower: 'desc' }],
+      take: 200, // Cap results to prevent unbounded queries
     })
 
     // Deduplicate by model name
@@ -983,72 +987,51 @@ export async function searchCarsFullPage(query: string): Promise<Partial<Car>[]>
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function _fetchCarById(id: string): Promise<Car | null> {
-  try {
-    const car = await prisma.car.findUnique({
-      where: { id },
-      include: {
-        sources: true,
-        images: {
-          orderBy: { priority: 'asc' },
-        },
+  // Errors intentionally propagate so unstable_cache does NOT cache null results
+  const car = await prisma.car.findUnique({
+    where: { id },
+    include: {
+      sources: true,
+      images: {
+        orderBy: { priority: 'asc' },
       },
-    })
-    if (!car) return null
-    return mapPrismaCar(car)
-  } catch (error) {
-    logger.error('fetchCarById failed', {
-      path: 'lib/api-service.ts#fetchCarById',
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      meta: { carId: id },
-    })
-    return null
-  }
+    },
+  })
+  if (!car) return null
+  return mapPrismaCar(car)
 }
 
 async function _fetchBrands(): Promise<string[]> {
-  try {
-    const rows = await prisma.car.findMany({
-      where: { brand: { notIn: HIDDEN_BRANDS } },
-      select: { brand: true },
-      distinct: ['brand'],
-      orderBy: { brand: 'asc' },
-    })
-    return rows.map((r) => r.brand)
-  } catch (error) {
-    logger.error('fetchBrands failed', {
-      path: 'lib/api-service.ts#fetchBrands',
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    })
-    return []
-  }
+  // Errors intentionally propagate so unstable_cache does NOT cache empty results
+  const rows = await prisma.car.findMany({
+    where: { brand: { notIn: HIDDEN_BRANDS } },
+    select: { brand: true },
+    distinct: ['brand'],
+    orderBy: { brand: 'asc' },
+  })
+  return rows.map((r) => r.brand)
 }
 
 async function _fetchBrandStats(): Promise<{ name: string; count: number }[]> {
-  try {
-    // Use a single efficient groupBy with _count instead of fetching all rows
-    const grouped = await prisma.car.groupBy({
-      by: ['brand'],
-      where: {
-        brand: { notIn: HIDDEN_BRANDS },
-        isDemoted: false,
-        isCanonical: true,
-      },
-      _count: { brand: true },
-    })
+  // Errors intentionally propagate so unstable_cache does NOT cache empty results
+  // Use a single efficient groupBy to get distinct models instead of just canonical rows
+  const grouped = await prisma.car.groupBy({
+    by: ['brand', 'name'],
+    where: {
+      brand: { notIn: HIDDEN_BRANDS },
+      isDemoted: false,
+      image: { not: '' },
+    },
+  })
 
-    return grouped
-      .map(row => ({ name: row.brand, count: row._count.brand }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  } catch (error) {
-    logger.error('fetchBrandStats failed', {
-      path: 'lib/api-service.ts#fetchBrandStats',
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    })
-    return []
+  const brandCounts = new Map<string, number>()
+  for (const row of grouped) {
+    brandCounts.set(row.brand, (brandCounts.get(row.brand) || 0) + 1)
   }
+
+  return Array.from(brandCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 // ── Trim Identity Deduplicator ─────────────────────────────────────────────────
@@ -1141,8 +1124,8 @@ async function _fetchSimilarCars(
   car: { id: string; brand: string; name: string; type: string; fuelType: string; year: number; price: number },
   limit = 4
 ): Promise<Partial<Car>[]> {
-  try {
-    const modelName = car.name.startsWith(car.brand + ' ')
+  // Errors intentionally propagate so unstable_cache does NOT cache empty results
+  const modelName = car.name.startsWith(car.brand + ' ')
       ? car.name.slice(car.brand.length + 1)
       : car.name
     const fullName = `${car.brand} ${modelName}`
@@ -1239,14 +1222,6 @@ async function _fetchSimilarCars(
     }
 
     return result.map(mapPrismaCar) as Partial<Car>[]
-  } catch (error) {
-    logger.error('fetchSimilarCars failed', {
-      path: 'lib/api-service.ts#fetchSimilarCars',
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    })
-    return []
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1294,72 +1269,68 @@ export function normalizeModelFamilyName(raw: string): string {
 }
 
 async function _fetchBrandModelFamilies(brandName: string) {
-  try {
-    if (HIDDEN_BRANDS.includes(brandName)) return []
+  if (HIDDEN_BRANDS.includes(brandName)) return []
 
-    // Fetch ALL cars for the brand to do in-memory grouping
-    const allCars = await prisma.car.findMany({
-       where: {
-         brand: brandName,
-         type: { notIn: HIDDEN_TYPES },
-         modelFamily: { not: null },
-         isDemoted: false,
-       },
-       select: CAR_LIST_SELECT,
-    })
-    
-    // Group them by normalized model family
-    const normalizedGroups = new Map<string, typeof allCars>()
-    
-    for (const car of allCars) {
-       const normName = normalizeModelFamilyName(car.modelFamily!)
-       if (!normalizedGroups.has(normName)) {
-           normalizedGroups.set(normName, [])
-       }
-       normalizedGroups.get(normName)!.push(car)
-    }
-
-    const result = Array.from(normalizedGroups.entries()).map(([modelName, carsInGroup]) => {
-      const totalVariants = carsInGroup.length
-      
-      // Find the best canonical car to represent this model
-      // Prefer cars that are explicitly marked isCanonical, then sort by highest horsepower
-      const canonicals = carsInGroup.filter(c => c.isCanonical)
-      const pool = canonicals.length > 0 ? canonicals : carsInGroup
-      
-      const bestCar = pool.sort((a, b) => (b.horsepower || 0) - (a.horsepower || 0))[0]
-
-      // Determine the highest popularity score among all variants of this model
-      const maxPopularity = Math.max(...carsInGroup.map(c => c.popularityScore || 0))
-
-      return {
-        modelName,
-        image: bestCar.cdnImage || bestCar.image || '',
-        totalVariants,
-        type: bestCar.type || 'Unknown',
-        popularityScore: maxPopularity,
-        singleVariantId: totalVariants === 1 ? bestCar.id : undefined,
-        singleVariantRecord: totalVariants === 1 ? mapPrismaCar(bestCar) : undefined,
-      }
-    }).sort((a, b) => {
-      // 1. Flagship models always appear first
-      const flagA = getFlagshipBoost(brandName, a.modelName)
-      const flagB = getFlagshipBoost(brandName, b.modelName)
-      if (flagA !== flagB) return flagB - flagA
-
-      // 2. Sort by actual Wikipedia popularity score
-      if (a.popularityScore !== b.popularityScore) {
-        return b.popularityScore - a.popularityScore
-      }
-      // 3. Fallback to Total Variants
-      return b.totalVariants - a.totalVariants
-    })
-
-    return result
-  } catch (err) {
-    logger.error('fetchBrandModelFamilies failed', { error: String(err) })
-    return []
+  // Fetch ALL cars for the brand to do in-memory grouping
+  // NOTE: Errors intentionally propagate so unstable_cache does NOT cache empty results
+  const allCars = await prisma.car.findMany({
+     where: {
+       brand: brandName,
+       type: { notIn: HIDDEN_TYPES },
+       isDemoted: false,
+     },
+     select: CAR_DETAIL_SELECT,
+  })
+  
+  // Group them by normalized model family
+  const normalizedGroups = new Map<string, typeof allCars>()
+  
+  for (const car of allCars) {
+     const rawFamily = car.modelFamily || extractModelFamily(car.name, brandName)
+     const normName = normalizeModelFamilyName(rawFamily)
+     if (!normalizedGroups.has(normName)) {
+         normalizedGroups.set(normName, [])
+     }
+     normalizedGroups.get(normName)!.push(car)
   }
+
+  const result = Array.from(normalizedGroups.entries()).map(([modelName, carsInGroup]) => {
+    const totalVariants = carsInGroup.length
+    
+    // Find the best canonical car to represent this model
+    // Prefer cars that are explicitly marked isCanonical, then sort by highest horsepower
+    const canonicals = carsInGroup.filter(c => c.isCanonical)
+    const pool = canonicals.length > 0 ? canonicals : carsInGroup
+    
+    const bestCar = pool.sort((a, b) => (b.horsepower || 0) - (a.horsepower || 0))[0]
+
+    // Determine the highest popularity score among all variants of this model
+    const maxPopularity = Math.max(...carsInGroup.map(c => c.popularityScore || 0))
+
+    return {
+      modelName,
+      image: bestCar.cdnImage || bestCar.image || '',
+      totalVariants,
+      type: bestCar.type || 'Unknown',
+      popularityScore: maxPopularity,
+      singleVariantId: totalVariants === 1 ? bestCar.id : undefined,
+      singleVariantRecord: totalVariants === 1 ? mapPrismaCar(bestCar) : undefined,
+    }
+  }).sort((a, b) => {
+    // 1. Flagship models always appear first
+    const flagA = getFlagshipBoost(brandName, a.modelName)
+    const flagB = getFlagshipBoost(brandName, b.modelName)
+    if (flagA !== flagB) return flagB - flagA
+
+    // 2. Sort by actual Wikipedia popularity score
+    if (a.popularityScore !== b.popularityScore) {
+      return b.popularityScore - a.popularityScore
+    }
+    // 3. Fallback to Total Variants
+    return b.totalVariants - a.totalVariants
+  })
+
+  return result
 }
 
 
@@ -1380,8 +1351,8 @@ export function extractVariantCategory(name: string, horsepower?: number | null)
 }
 
 async function _fetchModelHierarchy(brandName: string, modelName: string) {
-  try {
-    // Fetch all cars for the brand to normalize and filter in-memory
+  // Errors intentionally propagate so unstable_cache does NOT cache empty results
+  // Fetch all cars for the brand to normalize and filter in-memory
     const allCars = await prisma.car.findMany({
         where: { 
             brand: brandName, 
@@ -1392,7 +1363,7 @@ async function _fetchModelHierarchy(brandName: string, modelName: string) {
               { name: { contains: modelName, mode: 'insensitive' } }
             ]
         },
-        select: CAR_LIST_SELECT,
+        select: CAR_DETAIL_SELECT,
         orderBy: { year: 'asc' }
     })
     
@@ -1537,140 +1508,183 @@ async function _fetchModelHierarchy(brandName: string, modelName: string) {
     })
     
     return hierarchy
-  } catch (err) {
-    logger.error('fetchModelHierarchy failed', { error: String(err) })
-    return []
-  }
 }
 
 // ── Fetch cross-link relationships for a car ──
 async function _fetchCarRelationships(carId: string) {
-  try {
-    const [outgoing, incoming] = await Promise.all([
-      prisma.carRelationship.findMany({
-        where: { sourceCarId: carId },
-        include: {
-          targetCar: {
-            select: { id: true, name: true, brand: true, image: true, cdnImage: true, year: true, type: true }
-          }
+  // Errors intentionally propagate so unstable_cache does NOT cache empty results
+  const [outgoing, incoming] = await Promise.all([
+    prisma.carRelationship.findMany({
+      where: { sourceCarId: carId },
+      include: {
+        targetCar: {
+          select: { id: true, name: true, brand: true, image: true, cdnImage: true, year: true, type: true }
         }
-      }),
-      prisma.carRelationship.findMany({
-        where: { targetCarId: carId },
-        include: {
-          sourceCar: {
-            select: { id: true, name: true, brand: true, image: true, cdnImage: true, year: true, type: true }
-          }
+      }
+    }),
+    prisma.carRelationship.findMany({
+      where: { targetCarId: carId },
+      include: {
+        sourceCar: {
+          select: { id: true, name: true, brand: true, image: true, cdnImage: true, year: true, type: true }
         }
-      }),
-    ])
-    
-    // Normalize: always present the "other" car as the related one
-    const relationships = [
-      ...outgoing.map(r => ({
-        id: r.id,
-        relationshipType: r.relationshipType,
-        note: r.note,
-        relatedCar: r.targetCar,
-      })),
-      ...incoming.map(r => ({
-        id: r.id,
-        relationshipType: r.relationshipType,
-        note: r.note,
-        relatedCar: r.sourceCar,
-      })),
-    ]
-    
-    return relationships
-  } catch (err) {
-    logger.error('fetchCarRelationships failed', { error: String(err) })
-    return []
-  }
+      }
+    }),
+  ])
+  
+  // Normalize: always present the "other" car as the related one
+  const relationships = [
+    ...outgoing.map(r => ({
+      id: r.id,
+      relationshipType: r.relationshipType,
+      note: r.note,
+      relatedCar: r.targetCar,
+    })),
+    ...incoming.map(r => ({
+      id: r.id,
+      relationshipType: r.relationshipType,
+      note: r.note,
+      relatedCar: r.sourceCar,
+    })),
+  ]
+  
+  return relationships
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CACHE WRAPPERS
+// Error handling strategy: Inner functions throw on DB errors so unstable_cache
+// does NOT cache empty/null results. The outer wrapper catches the error, logs
+// it, and returns a safe fallback — ensuring transient failures never persist.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const fetchCarOfTheDay = async () => {
-  return unstable_cache(
-    async () => _fetchCarOfTheDay(),
-    ['car-of-the-day-v2'],
-    { tags: ['featured'], revalidate: 1800 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchCarOfTheDay(),
+      ['car-of-the-day-v2'],
+      { tags: ['featured'], revalidate: 1800 }
+    )();
+  } catch (err) {
+    logger.error('fetchCarOfTheDay cache miss + error', { error: String(err) })
+    return null
+  }
 }
 
 export const fetchFeaturedCars = async (limit = 8) => {
-  // Include current hour in cache key so each hour produces a fresh selection
-  const hourKey = String(Math.floor(Date.now() / 3_600_000));
-  return unstable_cache(
-    async () => _fetchFeaturedCars(limit),
-    ['featured-cars-v2', String(limit), hourKey],
-    { tags: ['featured'], revalidate: 600 }
-  )();
+  try {
+    const hourKey = String(Math.floor(Date.now() / 3_600_000));
+    return await unstable_cache(
+      async () => _fetchFeaturedCars(limit),
+      ['featured-cars-v2', String(limit), hourKey],
+      { tags: ['featured'], revalidate: 600 }
+    )();
+  } catch (err) {
+    logger.error('fetchFeaturedCars cache miss + error', { error: String(err) })
+    return []
+  }
 }
 
 export const fetchBrandCars = async (brandName: string) => {
-  return unstable_cache(
-    async () => _fetchBrandCars(brandName),
-    ['brand-cars', brandName],
-    { tags: ['brand', brandName], revalidate: 3600 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchBrandCars(brandName),
+      ['brand-cars', brandName],
+      { tags: ['brand', brandName], revalidate: 3600 }
+    )();
+  } catch (err) {
+    logger.error('fetchBrandCars cache miss + error', { error: String(err), brand: brandName })
+    return []
+  }
 }
 
 export const fetchCarById = async (id: string) => {
-  return unstable_cache(
-    async () => _fetchCarById(id),
-    ['car', id],
-    { tags: ['car-details', `car-${id}`], revalidate: 3600 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchCarById(id),
+      ['car', id],
+      { tags: ['car-details', `car-${id}`], revalidate: 3600 }
+    )();
+  } catch (err) {
+    logger.error('fetchCarById cache miss + error', { error: String(err), carId: id })
+    return null
+  }
 }
 
 export const fetchBrands = async () => {
-  return unstable_cache(
-    async () => _fetchBrands(),
-    ['brands'],
-    { tags: ['global-stats'], revalidate: 3600 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchBrands(),
+      ['brands'],
+      { tags: ['global-stats'], revalidate: 3600 }
+    )();
+  } catch (err) {
+    logger.error('fetchBrands cache miss + error', { error: String(err) })
+    return []
+  }
 }
 
 export const fetchBrandStats = async () => {
-  return unstable_cache(
-    async () => _fetchBrandStats(),
-    ['brand-stats'],
-    { tags: ['global-stats'], revalidate: 3600 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchBrandStats(),
+      ['brand-stats'],
+      { tags: ['global-stats'], revalidate: 3600 }
+    )();
+  } catch (err) {
+    logger.error('fetchBrandStats cache miss + error', { error: String(err) })
+    return []
+  }
 }
 
 export const fetchSimilarCars = async (car: any, limit = 4) => {
-  // Pass only primitive ID to cache key to avoid serialization issues
-  return unstable_cache(
-    async () => _fetchSimilarCars(car, limit),
-    ['similar-cars', car.id, String(limit)],
-    { tags: ['similar', `car-${car.id}`], revalidate: 3600 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchSimilarCars(car, limit),
+      ['similar-cars', car.id, String(limit)],
+      { tags: ['similar', `car-${car.id}`], revalidate: 3600 }
+    )();
+  } catch (err) {
+    logger.error('fetchSimilarCars cache miss + error', { error: String(err) })
+    return []
+  }
 }
 
 export const fetchBrandModelFamilies = async (brandName: string) => {
-  return unstable_cache(
-    async () => _fetchBrandModelFamilies(brandName),
-    ['families', brandName],
-    { tags: ['brand', brandName], revalidate: 3600 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchBrandModelFamilies(brandName),
+      ['families', brandName],
+      { tags: ['brand', brandName], revalidate: 3600 }
+    )();
+  } catch (err) {
+    logger.error('fetchBrandModelFamilies cache miss + error', { error: String(err), brand: brandName })
+    return []
+  }
 }
 
 export const fetchModelHierarchy = async (brandName: string, modelName: string) => {
-  return unstable_cache(
-    async () => _fetchModelHierarchy(brandName, modelName),
-    ['hierarchy', brandName, modelName],
-    { tags: ['brand', brandName], revalidate: 3600 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchModelHierarchy(brandName, modelName),
+      ['hierarchy', brandName, modelName],
+      { tags: ['brand', brandName], revalidate: 3600 }
+    )();
+  } catch (err) {
+    logger.error('fetchModelHierarchy cache miss + error', { error: String(err) })
+    return []
+  }
 }
 
 export const fetchCarRelationships = async (carId: string) => {
-  return unstable_cache(
-    async () => _fetchCarRelationships(carId),
-    ['relationships', carId],
-    { tags: [`car-${carId}`], revalidate: 3600 }
-  )();
+  try {
+    return await unstable_cache(
+      async () => _fetchCarRelationships(carId),
+      ['relationships', carId],
+      { tags: [`car-${carId}`], revalidate: 3600 }
+    )();
+  } catch (err) {
+    logger.error('fetchCarRelationships cache miss + error', { error: String(err) })
+    return []
+  }
 }

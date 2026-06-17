@@ -19,15 +19,28 @@ export function cleanCarName(name: string, brand?: string): string {
   return cleaned.trim();
 }
 
+export function sanitizeSpec(value: string | undefined | null): string | null {
+  if (!value) return null;
+  let cleaned = value
+    .replace(/\.mw-parser-output.*?none;/g, '')
+    .replace(/\.mw-parser-output[^{]*{[^}]*}/g, '')
+    .replace(/\.mw-parser-output.*?\}/g, '')
+    .replace(/\.mw-parser-output.*?display:none;/g, '')
+    .trim();
+  if (cleaned.startsWith('.mw-') || cleaned.includes('{line-height:inherit;')) {
+    return null;
+  }
+  return cleaned === '' ? null : cleaned;
+}
+
 export function optimizeImage(url: string | undefined | null, width = 400) {
   if (!url) return null;
   if (url.startsWith('/') || url.includes('.svg')) return url;
+  // Already proxied — return as-is
+  if (url.includes('wsrv.nl')) return url;
   
-  // Clean URL for Photon (remove https://)
-  const cleanUrl = url.replace(/^https?:\/\//, '');
-  
-  // Use WordPress Photon (i0.wp.com) - incredibly fast global CDN that auto-converts to WebP
-  return `https://i0.wp.com/${cleanUrl}?w=${width}&quality=80&strip=all`;
+  // Use wsrv.nl — free, fast CDN proxy that supports any origin and auto-converts to WebP
+  return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${width}&q=80&output=webp`;
 }
 
 /**
@@ -36,9 +49,13 @@ export function optimizeImage(url: string | undefined | null, width = 400) {
 export function getLQIP(url: string | undefined | null): string | null {
   if (!url) return null;
   if (url.startsWith('/') || url.includes('.svg')) return null;
+  if (url.includes('wsrv.nl')) return null;
   
-  const cleanUrl = url.replace(/^https?:\/\//, '');
-  return `https://i0.wp.com/${cleanUrl}?w=20&quality=10&blur=20`;
+  if (url.includes('res.cloudinary.com') && url.includes('/image/upload/')) {
+    return url.replace('/image/upload/', '/image/upload/w_20,q_10,e_blur:200,f_auto/');
+  }
+  
+  return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=20&q=10&blur=20&output=webp`;
 }
 
 /**
@@ -47,9 +64,13 @@ export function getLQIP(url: string | undefined | null): string | null {
 export function optimizeThumb(url: string | undefined | null, width = 112) {
   if (!url) return null;
   if (url.startsWith('/') || url.includes('.svg')) return url;
+  if (url.includes('wsrv.nl')) return url;
   
-  const cleanUrl = url.replace(/^https?:\/\//, '');
-  return `https://i0.wp.com/${cleanUrl}?w=${width}&quality=60&strip=all`;
+  if (url.includes('res.cloudinary.com') && url.includes('/image/upload/')) {
+    return url.replace('/image/upload/', `/image/upload/w_${width},q_60,f_auto/`);
+  }
+  
+  return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${width}&q=60&output=webp`;
 }
 
 export function estimatePerformance(car: Partial<Car>) {
