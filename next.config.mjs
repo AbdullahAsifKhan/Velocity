@@ -8,6 +8,8 @@ const nextConfig = {
     },
   },
   images: {
+    loader: 'custom',
+    loaderFile: './lib/image-loader.ts',
     remotePatterns: [
       // Wikimedia
       { protocol: 'https', hostname: 'upload.wikimedia.org' },
@@ -18,6 +20,7 @@ const nextConfig = {
       { protocol: 'https', hostname: 'images.unsplash.com' },
       { protocol: 'https', hostname: 'wsrv.nl' },
       { protocol: 'https', hostname: 'images.hgmsites.net' },
+      { protocol: 'https', hostname: 'res.cloudinary.com' },
       // Automotive dealer / press sources
       { protocol: 'https', hostname: 'www.marshallgoldman.com' },
       { protocol: 'http', hostname: 'www.marshallgoldman.com' },
@@ -28,10 +31,10 @@ const nextConfig = {
       { protocol: 'https', hostname: 'lh5.googleusercontent.com' },
       { protocol: 'https', hostname: 'lh6.googleusercontent.com' },
       { protocol: 'https', hostname: 'encrypted-tbn0.gstatic.com' },
-      // Broad wildcard fallback — catches any other external automotive image
-      { protocol: 'https', hostname: '**' },
-      { protocol: 'http', hostname: '**' },
     ],
+    formats: ['image/avif', 'image/webp'],
+    deviceSizes: [640, 828, 1080, 1200, 1920],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     minimumCacheTTL: 2592000, // 30 days
   },
   // Security & performance headers
@@ -44,6 +47,22 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'no-referrer' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "img-src 'self' data: blob: https: http:",
+              "font-src 'self' https://fonts.gstatic.com",
+              "connect-src 'self' https://va.vercel-scripts.com https://vitals.vercel-insights.com https://res.cloudinary.com https://wsrv.nl",
+              "frame-ancestors 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+            ].join('; '),
+          },
         ],
       },
       {
